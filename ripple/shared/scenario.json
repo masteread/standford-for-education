@@ -1,28 +1,99 @@
 {
-  "id": "lemonville",
+  "id": "lemonville-ecosystem",
   "title": "Lemonville",
   "rounds": 12,
-  "roundSeconds": 20,
+  "roundSeconds": 35,
   "good": "lemons",
-  "demand": { "intercept": 140, "slope": 10, "note": "D = max(0, 140 - 10 * avgPrice)" },
-  "switching": { "coeff": 0.2, "cap": 0.5, "note": "shift toward cheaper stand = clamp(0.2 * (priceB-priceA), -0.5, 0.5)" },
-  "unitCost": 2,
-  "startCash": 100,
-  "startCrates": 20,
+  "tiers": [
+    {
+      "role": "farmer",
+      "label": "Lemon Farm",
+      "emoji": "🧑‍🌾",
+      "building": "🌾",
+      "seats": 3,
+      "priceBounds": { "min": 1, "max": 10 },
+      "qtyBounds": { "min": 0, "max": 30 },
+      "qtyVerb": "grow",
+      "startCash": 80,
+      "startCrates": 6,
+      "unitCost": 2,
+      "defaultPrice": 3,
+      "defaultQty": 14
+    },
+    {
+      "role": "wholesaler",
+      "label": "Wholesale Depot",
+      "emoji": "🚛",
+      "building": "🏭",
+      "seats": 2,
+      "priceBounds": { "min": 2, "max": 12 },
+      "qtyBounds": { "min": 0, "max": 40 },
+      "qtyVerb": "order from farms",
+      "startCash": 150,
+      "startCrates": 12,
+      "defaultPrice": 5,
+      "defaultQty": 20
+    },
+    {
+      "role": "grocer",
+      "label": "Grocery Store",
+      "emoji": "🛒",
+      "building": "🏪",
+      "seats": 3,
+      "priceBounds": { "min": 3, "max": 15 },
+      "qtyBounds": { "min": 0, "max": 20 },
+      "qtyVerb": "order from depots",
+      "startCash": 120,
+      "startCrates": 8,
+      "defaultPrice": 7,
+      "defaultQty": 10
+    },
+    {
+      "role": "restaurant",
+      "label": "Lemon Café",
+      "emoji": "👨‍🍳",
+      "building": "🍽️",
+      "seats": 3,
+      "priceBounds": { "min": 4, "max": 25 },
+      "qtyBounds": { "min": 0, "max": 8 },
+      "qtyVerb": "order from depots",
+      "startCash": 120,
+      "startCrates": 3,
+      "defaultPrice": 12,
+      "defaultQty": 4,
+      "mealsPerCrate": 4,
+      "prepCostPerMeal": 1
+    }
+  ],
+  "folk": {
+    "count": 24,
+    "wtpGrocery": { "min": 4, "max": 14 },
+    "wtpMeal": { "min": 6, "max": 18 },
+    "maxGroceryCrates": 2,
+    "loyaltyGap": 1,
+    "seed": 7,
+    "note": "Each townsfolk has a fixed willingness-to-pay; aggregate demand slopes down EMERGENTLY (no D=a-bP formula anywhere)."
+  },
+  "business": { "loyaltyGap": 0.5, "note": "A buyer sticks with last round's supplier unless someone else beats them by more than the gap (switching friction)." },
   "spoilAfterRounds": 3,
-  "townsfolk": 20,
-  "priceBounds": { "min": 1, "max": 15 },
-  "produceBounds": { "min": 0, "max": 100 },
+  "reputation": { "priceFactor": 1.3, "rounds": 2, "note": "Selling bad crates makes buyers treat your price as 30% higher for 2 rounds." },
+  "profitTarget": { "farmer": 120, "wholesaler": 150, "grocer": 150, "restaurant": 150 },
+  "goals": {
+    "farmer": ["max_profit", "market_share", "survive_frost", "zero_spoilage"],
+    "wholesaler": ["max_profit", "volume_mover", "perfect_fill", "zero_spoilage"],
+    "grocer": ["max_profit", "market_share", "clean_reputation", "zero_spoilage"],
+    "restaurant": ["max_profit", "serve_meals", "clean_reputation", "zero_spoilage"]
+  },
   "events": [
     {
       "round": 4,
       "id": "frost",
       "type": "frost",
       "emoji": "❄️",
-      "title": "FROST! Costs doubled!",
-      "concept": "supply shock (marginal cost)",
-      "news": "FROST: input costs doubled",
-      "newUnitCost": 4,
+      "title": "FROST! Farm costs doubled!",
+      "concept": "supply shock (marginal cost) + pass-through down the chain",
+      "news": "FROST: growing cost doubled at every farm — watch it travel down the chain",
+      "costFactor": 2,
       "task": "frost_response"
     },
     {
@@ -30,9 +101,9 @@
       "id": "tax",
       "type": "tax",
       "emoji": "📜",
-      "title": "TAX DECREE: $1/crate",
+      "title": "RETAIL TAX: $1/sale",
       "concept": "tax incidence (pass-through vs absorb)",
-      "news": "TAX DECREE: $1 sales tax per crate sold",
+      "news": "TAX DECREE: $1 per crate or meal sold to townsfolk — retailers remit",
       "amount": 1,
       "task": "tax_response"
     },
@@ -41,14 +112,12 @@
       "id": "shady_supplier",
       "type": "supplier_offer",
       "emoji": "🕵️",
-      "title": "A stranger approaches...",
+      "title": "A stranger with cheap crates…",
       "concept": "market for lemons (hidden quality / reputation)",
-      "news": "A shady supplier offers 20 crates at $1 — but they might be bad",
-      "crates": 20,
+      "news": "A shady supplier is offering dirt-cheap crates to anyone who'll take them",
+      "crates": 10,
       "price": 1,
       "badChance": 0.5,
-      "reputationPenalty": 0.2,
-      "reputationRounds": 2,
       "task": "quality_choice"
     },
     {
@@ -56,18 +125,13 @@
       "id": "cartel",
       "type": "cartel_offer",
       "emoji": "🤝",
-      "title": "Cartel offer",
+      "title": "Your tier proposes a cartel",
       "concept": "Nash equilibrium (collusion & defection)",
-      "news": "Your rival proposes: both price at $8. Cooperate or defect?",
-      "price": 8,
+      "news": "Whispers in every tier of the chain: hold prices high, together…",
+      "tierPrice": { "farmer": 5, "wholesaler": 8, "grocer": 10, "restaurant": 16 },
       "npcDefectsRound": 11,
       "task": "cartel_reasoning"
     }
   ],
-  "freePlayTask": { "task": "free_play", "rounds": [1, 2, 3], "concept": "equilibrium discovery + spoilage discipline" },
-  "elasticityTwist": {
-    "enabled": false,
-    "good": "medicine",
-    "demand": { "intercept": 60, "slope": 2, "note": "inelastic — STRETCH ONLY" }
-  }
+  "freePlayTask": { "task": "free_play", "rounds": [1, 2, 3], "concept": "equilibrium discovery across a supply chain + spoilage discipline" }
 }
