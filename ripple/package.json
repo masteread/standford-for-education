@@ -1,0 +1,25 @@
+{
+  "name": "ripple",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:claude": "node scripts/test-claude.js",
+    "test:butterbase": "node test/test-butterbase.js",
+    "test:delegate": "node test/test-delegate.js",
+    "test:examiner": "node test/test-examiner.js",
+    "test:evermind": "node test/test-evermind.js",
+    "test:b": "node test/test-butterbase.js && node test/test-delegate.js && node test/test-examiner.js && node test/test-evermind.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "express": "^4.21.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-qr-code": "^2.2.0",
+    "recharts": "^2.15.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
