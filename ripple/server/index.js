@@ -10,6 +10,7 @@
 // supplier R8, cartel R10) so players decide under them. See server/events.js.
 
 import express from "express";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -27,6 +28,19 @@ const scenario = JSON.parse(readFileSync(path.join(__dirname, "../shared/scenari
 
 const SLOT_IDS = ["A", "B"]; // Lemonville is a duopoly
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const PORT = process.env.PORT || 3001;
+
+// Best shareable URL for the QR / join link: PUBLIC_URL (tunnel) if set, else the
+// machine's LAN IP so phones on the same wifi can scan and join.
+function shareUrl() {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/?$/, "/");
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const ni of list ?? []) {
+      if (ni.family === "IPv4" && !ni.internal) return `http://${ni.address}:${PORT}/`;
+    }
+  }
+  return `http://localhost:${PORT}/`;
+}
 
 // ── Game state ────────────────────────────────────────────────────────────────
 function freshGrower(id, name, goal) {
@@ -189,6 +203,9 @@ setInterval(() => {
 // ── HTTP ──────────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
+
+// GET /config → the shareable join URL for the QR code (works from phones).
+app.get("/config", (req, res) => res.json({ joinUrl: shareUrl() }));
 
 // POST /join {name} → assign the next open slot via the orchestrator.
 app.post("/join", async (req, res) => {
@@ -404,5 +421,7 @@ const clientDist = path.join(__dirname, "../client/dist");
 app.use(express.static(clientDist));
 app.get("*", (req, res) => res.sendFile(path.join(clientDist, "index.html")));
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`[ripple] Lemonville world server on http://localhost:${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[ripple] Lemonville world server on http://localhost:${PORT}`);
+  console.log(`[ripple] players on the same wifi join at: ${shareUrl()}`);
+});

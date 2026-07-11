@@ -1,6 +1,6 @@
 // Join flow — name entry → POST /join → pixel role card with the GOAL in big type.
 // QR code points other players/judges at the join URL. Mobile-first.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import QRCode from "react-qr-code";
 import { P, BORDER, SHADOW, pixFont, bodyFont, Panel, PixLabel, Btn, Wordmark, GOAL_LABEL } from "./pixel.js";
 
@@ -9,7 +9,12 @@ export default function Join({ onJoined }) {
   const [player, setPlayer] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const joinUrl = typeof window !== "undefined" ? window.location.origin + "/" : "https://lemonville.local/";
+  // Ask the server for the LAN/public URL so the QR works from other phones,
+  // not just localhost. Falls back to the current origin.
+  const [joinUrl, setJoinUrl] = useState(typeof window !== "undefined" ? window.location.origin + "/" : "https://lemonville.local/");
+  useEffect(() => {
+    fetch("/config").then((r) => r.json()).then((d) => d.joinUrl && setJoinUrl(d.joinUrl)).catch(() => {});
+  }, []);
 
   async function join(e) {
     e.preventDefault();
@@ -64,6 +69,8 @@ export default function Join({ onJoined }) {
         <div style={{ background: "#fff", border: BORDER, padding: 10, display: "inline-block" }}>
           <QRCode value={joinUrl} size={150} fgColor={P.ink} />
         </div>
+        <div style={{ fontFamily: bodyFont, fontSize: 16, marginTop: 10, opacity: 0.8 }}>or type: <b>{joinUrl}</b></div>
+        <div style={{ fontFamily: bodyFont, fontSize: 14, opacity: 0.6 }}>(must be on the same wi-fi)</div>
       </Panel>
     </div>
   );
