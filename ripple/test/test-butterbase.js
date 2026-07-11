@@ -26,7 +26,15 @@ await saveSkillModel("B", { name: "Bo", scores: { equilibrium_reasoning: { score
 check("appendDecision round-trips", getDecisions("A").length === 1);
 check("saveSkillModel round-trips", getSkillModel("A")?.name === "Ada");
 
+// The cloud leaderboard is shared and persistent, so other test runs'
+// students may be present — assert our two entries exist and are ordered.
 const board = await getLeaderboard();
-check("leaderboard sorted by quality", board.length === 2 && board[0].studentId === "A");
+const posA = board.findIndex((r) => r.studentId === "A");
+const posB = board.findIndex((r) => r.studentId === "B");
+check(
+  "leaderboard contains A above B (quality 8 vs 4)",
+  posA !== -1 && posB !== -1 && posA < posB,
+  board.map((r) => `${r.studentId}:${r.decisionQuality}`).join(" ")
+);
 
 process.exit(failures ? 1 : 0);
