@@ -8,6 +8,7 @@ import Game from "./Game.jsx";
 import Report from "./Report.jsx";
 import Professor from "./Professor.jsx";
 import Admin from "./Admin.jsx";
+import Live from "./Live.jsx";
 import { Screen } from "./pixel.js";
 
 const path = typeof window !== "undefined" ? window.location.pathname : "/";
@@ -59,5 +60,6 @@ function Play() {
 export default function App() {
   if (path.startsWith("/professor")) return <Screen wide><Professor /></Screen>;
   if (path.startsWith("/admin")) return <Screen wide><Admin /></Screen>;
+  if (path.startsWith("/live")) return <div style={{ minHeight: "100vh", padding: "18px 20px 40px" }}><Live /></div>;
   return <Play />;
 }

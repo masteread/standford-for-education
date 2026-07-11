@@ -234,6 +234,8 @@ app.get("/state/:studentId", (req, res) => {
     offers: pendingOffers(game, id),
     lastResolution: game.lastResolution,
     ripple: lastRipple,
+    confirmed: [...game.confirmed],
+    humans: [...game.joinOrder],
     roundStartedAt: game.roundStartedAt,
     roundSeconds: scenario.roundSeconds,
     totalRounds: scenario.rounds,

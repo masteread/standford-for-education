@@ -98,6 +98,7 @@ export default function Admin() {
         </Panel>
         <Panel>
           <PixLabel size={9} style={{ marginBottom: 10 }}>DEMO</PixLabel>
+          <Btn tone="lemon" size={12} onClick={() => window.open("/live", "_blank")} style={bigBtn}>📺 LIVE VIEW (projector)</Btn>
           <Btn tone="sky" size={12} onClick={() => post("/admin/seed")} style={bigBtn}>👥 SEED COHORT</Btn>
           <Btn size={12} onClick={() => { window.location.href = "/professor"; }} style={bigBtn}>🎓 PROFESSOR VIEW</Btn>
           <Btn tone="red" size={12} onClick={() => post("/admin/reset")} style={bigBtn}>♻ RESET</Btn>
