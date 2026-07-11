@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.js",
+    "dev": "node --env-file-if-exists=.env scripts/dev.js",
     "build:client": "node scripts/build-client.js",
-    "start": "npm run build:client && node server/index.js",
-    "server": "node server/index.js",
+    "start": "npm run build:client && node --env-file-if-exists=.env server/index.js",
+    "server": "node --env-file-if-exists=.env server/index.js",
     "test:claude": "node scripts/test-claude.js",
     "test:butterbase": "node test/test-butterbase.js",
     "test:delegate": "node test/test-delegate.js",
