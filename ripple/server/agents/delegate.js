@@ -1,13 +1,16 @@
-// B2 — Delegate agent: converts a student's free-text intent into a market
-// action {price, produce}, or asks at most one clarifying question.
-// One Claude call per intent, 8s hard timeout (risk register: a slow call must
-// never stall the tick — fall back to repeating the last action).
-// Without ANTHROPIC_API_KEY (or with RIPPLE_MOCK=1) a deterministic regex
-// parser is used, which doubles as the integration-checkpoint stub.
+// Delegate agent: converts a student's free-text intent into a market action
+// {price, produce}, or asks at most one clarifying question. One LLM call per
+// intent via Nebius Token Factory (OpenAI-compatible) on the SMALL/fast model,
+// 8s hard timeout (a slow call must never stall the tick — fall back to
+// repeating the last action). The chat reply shown to the player is a TEMPLATED
+// one-liner (not the LLM) so ticks stay fast and the tone stays consistent.
+// Without NEBIUS_API_KEY (or with RIPPLE_MOCK=1) a deterministic regex parser
+// runs, which also doubles as the integration-checkpoint stub.
 
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
-const MODEL = "claude-opus-4-8";
+const BASE_URL = process.env.NEBIUS_BASE_URL || "https://api.studio.nebius.com/v1/";
+const MODEL_SMALL = process.env.NEBIUS_MODEL_SMALL || "meta-llama/Llama-3.1-8B-Instruct";
 const DELEGATE_TIMEOUT_MS = 8000;
 const PRICE_MIN = 1;
 const PRICE_MAX = 15;
@@ -15,11 +18,11 @@ const PRODUCE_MIN = 0;
 const PRODUCE_MAX = 100;
 const DEFAULT_ACTION = { price: 5, produce: 20 };
 
-const liveMode = () => Boolean(process.env.ANTHROPIC_API_KEY) && process.env.RIPPLE_MOCK !== "1";
+const liveMode = () => Boolean(process.env.NEBIUS_API_KEY) && process.env.RIPPLE_MOCK !== "1";
 
 let client = null;
 function getClient() {
-  if (!client) client = new Anthropic({ timeout: DELEGATE_TIMEOUT_MS, maxRetries: 0 });
+  if (!client) client = new OpenAI({ baseURL: BASE_URL, apiKey: process.env.NEBIUS_API_KEY, timeout: DELEGATE_TIMEOUT_MS, maxRetries: 0 });
   return client;
 }
 
@@ -35,14 +38,18 @@ function normalizeAction(action, lastAction) {
   };
 }
 
-// Prompt agreed in ripple-work-split.md §B2 (lightly tuned).
-function buildPrompt({ intent, visibleState, ownState }) {
-  return `You are a student's trading delegate in a lemon-market simulation.
-Convert their instruction into an action. You may ask AT MOST one short
-clarifying question, and only if the instruction is genuinely ambiguous
-about price or production. Otherwise act.
+// Cheerful pixel-assistant confirmation, built from the parsed action by TEMPLATE.
+function replyFor(action) {
+  return `Okay! I'll price us at $${action.price} and stock ${action.produce} crates this round. 🍋`;
+}
 
-Market state visible to the student: ${JSON.stringify(visibleState ?? {})}
+function buildPrompt({ intent, visibleState, ownState }) {
+  return `You are a lemon-stand owner's cheerful trading delegate in the town of Lemonville.
+Convert their instruction into an action. You may ask AT MOST one short clarifying
+question, and only if the instruction is genuinely ambiguous about price or
+production. Otherwise act.
+
+Market state visible to the owner: ${JSON.stringify(visibleState ?? {})}
 Their current holdings: ${JSON.stringify(ownState ?? {})}
 Their instruction: "${intent}"
 
@@ -52,31 +59,11 @@ or
 {"action": null, "question": "<one short question>"}
 
 Rules: price must be ${PRICE_MIN}-${PRICE_MAX}; produce ${PRODUCE_MIN}-${PRODUCE_MAX}; if the instruction is relative
-("undercut slightly"), resolve it against the rival's last price; never
-invent information not in the state.`;
+("undercut slightly"), resolve it against the rival's last price; never invent
+information not in the state.`;
 }
 
-const OUTPUT_SCHEMA = {
-  type: "object",
-  properties: {
-    action: {
-      anyOf: [
-        {
-          type: "object",
-          properties: { price: { type: "number" }, produce: { type: "number" } },
-          required: ["price", "produce"],
-          additionalProperties: false,
-        },
-        { type: "null" },
-      ],
-    },
-    question: { anyOf: [{ type: "string" }, { type: "null" }] },
-  },
-  required: ["action", "question"],
-  additionalProperties: false,
-};
-
-/** Defensive parse: strip ```json fences, find the first JSON object. */
+/** Defensive parse: strip ```json fences, find the first balanced JSON object. */
 export function parseDelegateJson(text) {
   if (typeof text !== "string") return null;
   const cleaned = text.replace(/```(?:json)?/gi, "").trim();
@@ -137,7 +124,6 @@ export function regexDelegate({ intent, visibleState, ownState, lastAction, stud
     price = base.price + 1;
   }
 
-  // "protect margin": never price below unit cost + 1
   const unitCost = Number.isFinite(ownState?.unitCost) ? ownState.unitCost : 2;
   if (text.includes("margin") || text.includes("profit")) {
     price = Math.max(price, unitCost + 1);
@@ -148,34 +134,41 @@ export function regexDelegate({ intent, visibleState, ownState, lastAction, stud
   if (produceMore !== null) produce = base.produce + produceMore;
   else if (produceTo !== null) produce = produceTo;
 
-  return { action: normalizeAction({ price, produce }, lastAction), question: null, source: "regex" };
+  const action = normalizeAction({ price, produce }, lastAction);
+  return { action, question: null, reply: replyFor(action), source: "regex" };
 }
 
 /**
- * Main entry — Person A's `POST /intent` route calls this.
- * Returns {action, question, source} where exactly one of action/question is
- * non-null. Never throws; never takes longer than ~8s.
+ * Main entry — the POST /intent route calls this. Returns {action, question,
+ * reply, source} where exactly one of action/question is non-null. Never throws;
+ * never takes longer than ~8s.
  */
 export async function runDelegate({ studentId, intent, visibleState, ownState, lastAction }) {
   if (!liveMode()) {
     return regexDelegate({ intent, visibleState, ownState, lastAction, studentId });
   }
   try {
-    const response = await getClient().messages.create({
-      model: MODEL,
-      max_tokens: 1000,
-      output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
-      messages: [{ role: "user", content: buildPrompt({ intent, visibleState, ownState }) }],
+    const response = await getClient().chat.completions.create({
+      model: MODEL_SMALL,
+      temperature: 0.1,
+      max_tokens: 300,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "You convert a lemon-stand owner's plain-English instruction into a trading action. Respond ONLY with JSON." },
+        { role: "user", content: buildPrompt({ intent, visibleState, ownState }) },
+      ],
     });
-    const text = response.content.find((b) => b.type === "text")?.text ?? "";
+    const text = response.choices?.[0]?.message?.content ?? "";
     const parsed = parseDelegateJson(text);
     if (!parsed) throw new Error("unparseable delegate output");
     if (parsed.question && !parsed.action) {
-      return { action: null, question: String(parsed.question), source: "claude" };
+      return { action: null, question: String(parsed.question), reply: String(parsed.question), source: "nebius" };
     }
-    return { action: normalizeAction(parsed.action, lastAction), question: null, source: "claude" };
+    const action = normalizeAction(parsed.action, lastAction);
+    return { action, question: null, reply: replyFor(action), source: "nebius" };
   } catch (err) {
     console.warn(`[delegate] ${studentId ?? "?"} fell back to last action: ${err.message}`);
-    return { action: normalizeAction(lastAction ?? DEFAULT_ACTION, lastAction), question: null, source: "fallback" };
+    const action = normalizeAction(lastAction ?? DEFAULT_ACTION, lastAction);
+    return { action, question: null, reply: "I wasn't sure, so I kept our prices steady! 🍋", source: "fallback" };
   }
 }

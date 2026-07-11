@@ -8,20 +8,20 @@
     "build:client": "node scripts/build-client.js",
     "start": "npm run build:client && node --env-file-if-exists=.env server/index.js",
     "server": "node --env-file-if-exists=.env server/index.js",
-    "test:claude": "node scripts/test-claude.js",
+    "test:nebius": "node --env-file-if-exists=.env scripts/test-nebius.js",
+    "test:engine": "node test/test-engine.js",
     "test:butterbase": "node test/test-butterbase.js",
     "test:delegate": "node test/test-delegate.js",
     "test:examiner": "node test/test-examiner.js",
     "test:evermind": "node test/test-evermind.js",
-    "test:b": "node test/test-butterbase.js && node test/test-delegate.js && node test/test-examiner.js && node test/test-evermind.js"
+    "test:all": "node test/test-engine.js && node test/test-butterbase.js && node test/test-delegate.js && node test/test-examiner.js && node test/test-evermind.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.111.0",
     "express": "^4.21.0",
+    "openai": "^4.104.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-qr-code": "^2.2.0",
-    "recharts": "^2.15.4"
+    "react-qr-code": "^2.2.0"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

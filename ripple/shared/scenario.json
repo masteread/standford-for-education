@@ -1,21 +1,73 @@
 {
-  "id": "lemon_wars",
-  "title": "Lemon Wars",
+  "id": "lemonville",
+  "title": "Lemonville",
   "rounds": 12,
   "roundSeconds": 20,
   "good": "lemons",
   "demand": { "intercept": 140, "slope": 10, "note": "D = max(0, 140 - 10 * avgPrice)" },
-  "switching": { "coeff": 0.2, "cap": 0.5, "note": "shift toward cheaper grower = clamp(0.2 * (priceB-priceA), -0.5, 0.5)" },
+  "switching": { "coeff": 0.2, "cap": 0.5, "note": "shift toward cheaper stand = clamp(0.2 * (priceB-priceA), -0.5, 0.5)" },
   "unitCost": 2,
   "startCash": 100,
   "startCrates": 20,
   "spoilAfterRounds": 3,
+  "townsfolk": 20,
   "priceBounds": { "min": 1, "max": 15 },
   "produceBounds": { "min": 0, "max": 100 },
-  "shock": { "round": 8, "name": "FROST", "newUnitCost": 4, "news": "FROST: input costs doubled" },
+  "events": [
+    {
+      "round": 4,
+      "id": "frost",
+      "type": "frost",
+      "emoji": "❄️",
+      "title": "FROST! Costs doubled!",
+      "concept": "supply shock (marginal cost)",
+      "news": "FROST: input costs doubled",
+      "newUnitCost": 4,
+      "task": "frost_response"
+    },
+    {
+      "round": 6,
+      "id": "tax",
+      "type": "tax",
+      "emoji": "📜",
+      "title": "TAX DECREE: $1/crate",
+      "concept": "tax incidence (pass-through vs absorb)",
+      "news": "TAX DECREE: $1 sales tax per crate sold",
+      "amount": 1,
+      "task": "tax_response"
+    },
+    {
+      "round": 8,
+      "id": "shady_supplier",
+      "type": "supplier_offer",
+      "emoji": "🕵️",
+      "title": "A stranger approaches...",
+      "concept": "market for lemons (hidden quality / reputation)",
+      "news": "A shady supplier offers 20 crates at $1 — but they might be bad",
+      "crates": 20,
+      "price": 1,
+      "badChance": 0.5,
+      "reputationPenalty": 0.2,
+      "reputationRounds": 2,
+      "task": "quality_choice"
+    },
+    {
+      "round": 10,
+      "id": "cartel",
+      "type": "cartel_offer",
+      "emoji": "🤝",
+      "title": "Cartel offer",
+      "concept": "Nash equilibrium (collusion & defection)",
+      "news": "Your rival proposes: both price at $8. Cooperate or defect?",
+      "price": 8,
+      "npcDefectsRound": 11,
+      "task": "cartel_reasoning"
+    }
+  ],
+  "freePlayTask": { "task": "free_play", "rounds": [1, 2, 3], "concept": "equilibrium discovery + spoilage discipline" },
   "elasticityTwist": {
     "enabled": false,
     "good": "medicine",
-    "demand": { "intercept": 60, "slope": 2, "note": "inelastic — STRETCH ONLY, do not build before 4:15" }
+    "demand": { "intercept": 60, "slope": 2, "note": "inelastic — STRETCH ONLY" }
   }
 }

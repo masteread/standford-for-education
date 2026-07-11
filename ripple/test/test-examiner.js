@@ -53,11 +53,11 @@ check("skill model mirrored to EverOS memory (or fallback)", remembered?.scores?
 
 // optional live grading of one student
 delete process.env.RIPPLE_MOCK;
-if (process.env.ANTHROPIC_API_KEY && process.env.RIPPLE_LIVE_EXAMINER === "1") {
+if (process.env.NEBIUS_API_KEY && process.env.RIPPLE_LIVE_EXAMINER === "1") {
   const live = await gradeStudent({ ...cohort[5], cascade: sampleCascade });
   check("live: examiner returns 4 scored dimensions", Object.keys(live.scores).length === 4, `source=${live.source}`);
   const liveAnchor = (live.detected_biases ?? []).some((b) => /anchor/i.test(b.bias));
-  check("live: Claude flags anchoring on Frozen Fred", liveAnchor, JSON.stringify(live.detected_biases));
+  check("live: examiner flags anchoring on Frozen Fred", liveAnchor, JSON.stringify(live.detected_biases));
 } else {
   console.log("SKIP: live examiner (set RIPPLE_LIVE_EXAMINER=1 to run)");
 }

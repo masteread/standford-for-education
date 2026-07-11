@@ -62,17 +62,6 @@ function ageAndSpoil(inventory, spoilAfter) {
   return spoiled;
 }
 
-/** Apply the frost shock immediately (manual button or auto at the shock round). */
-export function applyFrost(game) {
-  if (game.frostDone) return;
-  const s = game.scenario;
-  for (const id of Object.keys(game.growers)) game.growers[id].unitCost = s.shock.newUnitCost;
-  game.market.news = s.shock.news;
-  game.frostDone = true;
-  game.frostRound = game.round;
-  push(game.cascade, game.round, s.shock.name, "unit cost doubled for all growers", "all", "shock");
-}
-
 /** Per-goal progress, 0..1. Shown, never graded. (Engine-computed — see docs OPEN QUESTION.) */
 function goalProgress(g, game) {
   switch (g.goal) {
@@ -129,9 +118,14 @@ export function resolveRound(game) {
   const avgPrice = (game.growers[ia].price + game.growers[ib].price) / 2;
   const D = demand(avgPrice, s);
   const { shareA, shareB, shift } = shares(game.growers[ia].price, game.growers[ib].price, s);
+  // Reputation: townsfolk who got a bad lemon boycott that stand (−penalty) for a few rounds.
+  const repMult = (id) => {
+    const g = game.growers[id];
+    return g.reputationUntil && round <= g.reputationUntil ? 1 - (game.repPenalty ?? 0) : 1;
+  };
   const demandBy = {
-    [ia]: Math.round(D * shareA),
-    [ib]: Math.round(D * shareB),
+    [ia]: Math.round(D * shareA * repMult(ia)),
+    [ib]: Math.round(D * shareB * repMult(ib)),
   };
 
   // cascade: buyer switching (attribute movement away from a 50/50 baseline).
@@ -157,13 +151,26 @@ export function resolveRound(game) {
     const available = totalCrates(g.inventory);
     const want = demandBy[id];
     const sold = sellFIFO(g.inventory, Math.min(want, available));
-    const revenue = sold * g.price;
+    const gross = sold * g.price;
+    const tax = (game.salesTax ?? 0) * sold; // per-crate sales tax, remitted by the seller
+    const revenue = gross - tax;
     g.sold = sold;
     g.soldCumulative += sold;
     g.cash += revenue;
 
+    if (tax > 0 && sold > 0) {
+      push(game.cascade, round, `${id} sold ${sold} crates under the $${game.salesTax}/crate tax`,
+        `$${tax} went to the town — net revenue $${gross}→$${revenue} (tax incidence)`, id, "tax");
+    }
     if (want > available && available >= 0) {
       push(game.cascade, round, `${id} demand ${want} > stock ${available}`, `${id} sold out`, id, "sellout");
+    }
+    // Bad-lemon reputation: selling while holding shady stock burns trust for a few rounds.
+    if (g.badStockPending && sold > 0) {
+      g.reputationUntil = round + (game.repRounds ?? 2);
+      g.badStockPending = false;
+      push(game.cascade, round, `${id} sold bad lemons to the town`,
+        `angry townsfolk 🤢 — ${Math.round((game.repPenalty ?? 0) * 100)}% fewer buyers for ${game.repRounds ?? 2} rounds`, id, "quality");
     }
     // elasticity flag: price up but revenue down vs last round → the core lesson.
     if (g._prevPrice != null && g.price > g._prevPrice && g.prevRevenue != null && revenue < g.prevRevenue) {

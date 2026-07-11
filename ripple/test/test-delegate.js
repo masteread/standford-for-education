@@ -31,11 +31,11 @@ const garbage = regexDelegate({ studentId: "A", intent: "asdf!!! 🍋🍋🍋", 
 check("stub: garbage input returns valid action", validAction(garbage), JSON.stringify(garbage.action));
 
 // --- live path ---
-if (process.env.ANTHROPIC_API_KEY && process.env.RIPPLE_MOCK !== "1") {
+if (process.env.NEBIUS_API_KEY && process.env.RIPPLE_MOCK !== "1") {
   const live = await runDelegate({ studentId: "A", intent: "undercut B slightly but protect margin", visibleState, ownState, lastAction });
   check(
     "live: undercut prices below rival, above cost",
-    live.source === "claude" && validAction(live) && live.action.price < 6 && live.action.price >= 3,
+    live.source === "nebius" && validAction(live) && live.action.price < 6 && live.action.price >= 3,
     `source=${live.source} ${JSON.stringify(live.action)}`
   );
 
@@ -55,7 +55,7 @@ if (process.env.ANTHROPIC_API_KEY && process.env.RIPPLE_MOCK !== "1") {
     JSON.stringify(liveRaise)
   );
 } else {
-  console.log("SKIP: live delegate (no ANTHROPIC_API_KEY)");
+  console.log("SKIP: live delegate (no NEBIUS_API_KEY)");
 }
 
 process.exit(failures ? 1 : 0);
