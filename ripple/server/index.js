@@ -184,11 +184,9 @@ app.post("/join", async (req, res) => {
   p.isHuman = true;
   p.goal = cast.goal;
   game.joinOrder.push(cast.studentId);
-  game.roundStartedAt = Date.now();
-  if (!game.started) {
-    game.started = true;
-    startRound();
-  }
+  // NOTE: joining does NOT start the clock — the professor presses START on
+  // /admin when the class is seated. Students see a clear waiting state.
+  if (!game.started) game.roundStartedAt = Date.now();
   res.json({ studentId: cast.studentId, role: cast.role, roleCard: cast.roleCard, castingReason: cast.castingReason, goal: cast.goal, scenario: slimScenario });
 });
 

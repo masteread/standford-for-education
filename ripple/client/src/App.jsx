@@ -36,7 +36,7 @@ function Play() {
   }, [studentId, phase]);
 
   if (phase === "join") {
-    return <Screen><Join onJoined={(d) => { setStudentId(d.studentId); setPhase("play"); }} /></Screen>;
+    return <Screen><Join onJoined={(d) => setStudentId(d.studentId)} onEnter={() => setPhase("play")} /></Screen>;
   }
   if (phase === "report") {
     return (

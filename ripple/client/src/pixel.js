@@ -25,10 +25,11 @@ export const pixFont = '"Press Start 2P", "Courier New", monospace';
 export const bodyFont = '"VT323", "Courier New", monospace';
 
 /** A hard-edged 8-bit panel. */
-export function Panel({ children, bg = P.white, style, className }) {
+export function Panel({ children, bg = P.white, style, className, onClick }) {
   return (
     <div
       className={className}
+      onClick={onClick}
       style={{ background: bg, border: BORDER, boxShadow: SHADOW, padding: 14, marginBottom: 14, ...style }}
     >
       {children}

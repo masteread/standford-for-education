@@ -1,0 +1,1 @@
+- [Ask design questions first](ask-design-questions-first.md) — Eduardo wants 2-4 option design questions before big Lemonville rebuilds; locked v4 decisions live in lemonville-build-spec.md

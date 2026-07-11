@@ -20,6 +20,13 @@ ok(a.studentId === "F1" && b.studentId === "G1", `seats spread tiers (${a.studen
 ok(a.role === "farmer" && b.role === "grocer", "roles assigned per seat");
 ok(a.goal !== b.goal || a.role !== b.role, "asymmetric casting");
 
+// The professor starts the game (joining no longer starts the clock).
+let pre = await j(`/state/F1`);
+ok(pre.started === false, "clock waits for the professor");
+await j("/admin/start", "POST");
+pre = await j(`/state/F1`);
+ok(pre.started === true, "professor start opens round 1");
+
 // Delegate smoke: plain English → {price, qty}
 const intent = await j("/intent", "POST", { studentId: "G1", text: "undercut the other grocers slightly and order 12" });
 ok(intent.action && intent.action.qty === 12, `delegate parsed intent → ${JSON.stringify(intent.action)}`);

@@ -202,15 +202,10 @@ export default function Town({ state, studentId }) {
         )}
       </div>
 
-      {/* town vitals strip */}
+      {/* town mood — two numbers a student can read at a glance */}
       <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <Tag bg={P.white}>Welfare ${metrics?.welfare ?? "—"}</Tag>
-        <Tag bg={P.white}>Surplus ${metrics?.consumerSurplus ?? "—"}</Tag>
-        <Tag bg={(metrics?.pricedOut ?? 0) >= 8 ? P.red : P.white}>😤 priced out {metrics?.pricedOut ?? "—"}</Tag>
-        <Tag bg={P.lemon}>F ${metrics?.avgPrice?.farmer ?? "—"}</Tag>
-        <Tag bg={P.skySoft}>W ${metrics?.avgPrice?.wholesaler ?? "—"}</Tag>
-        <Tag bg={P.greenSoft}>G ${metrics?.avgPrice?.grocer ?? "—"}</Tag>
-        <Tag bg={P.redSoft}>R ${metrics?.avgPrice?.restaurant ?? "—"}</Tag>
+        <Tag bg={P.greenSoft}>🛍️ {trips.filter((t) => t.to).length} purchases last round</Tag>
+        <Tag bg={(metrics?.pricedOut ?? 0) >= 8 ? P.red : P.white}>😤 {metrics?.pricedOut ?? 0} townsfolk found it too expensive</Tag>
       </div>
     </div>
   );

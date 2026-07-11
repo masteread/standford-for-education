@@ -1,13 +1,14 @@
-// Round view — three columns (stack on mobile):
-//   LEFT   Your business: role-specific dashboard, aging crates, goal progress
-//   CENTER The town (animated cascade) + timer + event banner + move panel
-//   RIGHT  Chat (Delegate / Town Crier / Messages) + YOUR RIPPLES card
+// Round view — designed for NON-TECHNICAL students. One clear job per moment:
+//   1. a status bar always says WHAT TO DO NOW ("set your price", "locked in…")
+//   2. the MOVE PANEL is the hero: big +/- steppers, plain words, one big button
+//   3. pending offers (shady supplier, cartel) surface as a big card up front,
+//      never buried in a tab
+//   4. everything else (stats, ripples, chat) is trimmed to what a student can
+//      absorb in five seconds; the professor keeps the dense views.
 import { useEffect, useRef, useState } from "react";
-import { P, BORDER, pixFont, bodyFont, Panel, PixLabel, Stat, Bar, Tag, Banner, Wordmark, GOAL_LABEL, ROLE_META, Btn } from "./pixel.js";
+import { P, BORDER, pixFont, bodyFont, Panel, PixLabel, Bar, Banner, Wordmark, GOAL_LABEL, ROLE_META, Btn } from "./pixel.js";
 import Town from "./Town.jsx";
 import ChatPanel from "./ChatPanel.jsx";
-
-const crateEmoji = (age) => (age >= 3 ? "🟤" : age === 2 ? "🟠" : "🍋");
 
 function useWidth() {
   const [w, setW] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
@@ -31,50 +32,75 @@ function useCountdown(state) {
   return { left: Math.ceil(remain / 1000), frac: remain / total };
 }
 
-function RoleDash({ self, state }) {
-  const meta = ROLE_META[self.role];
-  const batches = [...(self.inventory ?? [])].sort((a, b) => b.age - a.age);
-  const stock = batches.reduce((s, b) => s + b.units, 0);
-  const suppliers = (state.players ?? []).filter((p) => (self.role === "wholesaler" ? p.role === "farmer" : p.role === "wholesaler"));
-  const cheapestSupply = suppliers.length ? Math.min(...suppliers.map((p) => p.price)) : null;
+// Plain-language labels per role — no jargon.
+const MOVE_WORDS = {
+  farmer: { price: "Price per crate", qty: "Crates to grow", hint: (s) => `Growing costs $${s.unitCost} per crate.` },
+  wholesaler: { price: "Your resale price", qty: "Crates to buy from farms", hint: () => null },
+  grocer: { price: "Your shelf price", qty: "Crates to order", hint: () => null },
+  restaurant: { price: "Price of one meal", qty: "Crates to order", hint: () => "1 crate = 4 meals." },
+};
+
+/** Big-button number stepper (phone-friendly; no typing needed). */
+function Stepper({ label, value, onChange, min, max, step = 1, prefix = "" }) {
+  const dec = () => onChange(Math.max(min, Math.round((value - step) * 100) / 100));
+  const inc = () => onChange(Math.min(max, Math.round((value + step) * 100) / 100));
   return (
-    <Panel bg={meta.tint}>
-      <PixLabel size={11} style={{ marginBottom: 8 }}>{meta.emoji} {meta.label.toUpperCase()} {self.id}</PixLabel>
-      <Stat label="Cash" value={`$${self.cash}`} color={self.cash < 40 ? P.red : P.ink} />
-      <Stat label="Last round" value={`${self.profitRound >= 0 ? "+" : ""}$${self.profitRound}`} color={self.profitRound >= 0 ? P.green : P.red} hint="profit" />
-      <Stat label="Total profit" value={`${self.profitCumulative >= 0 ? "+" : ""}$${self.profitCumulative}`} />
-      {self.role === "farmer" && <Stat label="Grow cost" value={`$${self.unitCost}/crate`} color={self.unitCost > 2 ? P.sky : P.ink} hint={self.unitCost > 2 ? "doubled by frost ❄️" : null} />}
-      {self.role !== "farmer" && cheapestSupply != null && <Stat label="Cheapest supplier" value={`$${cheapestSupply}`} hint={self.role === "wholesaler" ? "farm ask" : "depot ask"} />}
-      {self.role === "restaurant" && <Stat label="Meals served" value={self.mealsServed} hint="1 crate = 4 meals" />}
-      {(state.salesTax ?? 0) > 0 && (self.role === "grocer" || self.role === "restaurant") && <Stat label="Retail tax" value={`$${state.salesTax}/sale`} color={P.red} hint="you remit 📜" />}
-      <Stat label="Stock" value={`${Math.round(stock * 10) / 10}`} hint="crates (spoil after 3r)" />
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0" }}>
-        {batches.map((b, i) => (
-          <div key={i} style={{ border: BORDER, background: P.white, padding: "3px 5px", fontFamily: bodyFont, fontSize: 14 }}>
-            <span style={{ fontSize: 16 }}>{crateEmoji(b.age)}</span> ×{Math.round(b.units * 10) / 10}
-            <span style={{ display: "block", fontFamily: pixFont, fontSize: 7, color: b.age >= 2 ? P.red : P.ink }}>spoil {Math.max(0, 3 - b.age)}r</span>
-          </div>
-        ))}
-        {batches.length === 0 && <span style={{ fontFamily: bodyFont, fontSize: 15, opacity: 0.6 }}>shelves empty…</span>}
+    <div style={{ flex: 1, minWidth: 140 }}>
+      <div style={{ fontFamily: pixFont, fontSize: 8, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+        <button onClick={dec} style={{ fontFamily: pixFont, fontSize: 16, width: 46, background: P.white }}>−</button>
+        <div style={{ flex: 1, border: BORDER, background: P.white, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: pixFont, fontSize: 15, minHeight: 44 }}>
+          {prefix}{value}
+        </div>
+        <button onClick={inc} style={{ fontFamily: pixFont, fontSize: 16, width: 46, background: P.white }}>+</button>
       </div>
-      {self.shortfall > 0 && <div style={{ fontFamily: bodyFont, fontSize: 15, color: P.red }}>📦 {self.shortfall} ordered crates never arrived (suppliers ran dry)</div>}
-      <div style={{ borderTop: BORDER, paddingTop: 8, marginTop: 4 }}>
-        <PixLabel size={9}>🎯 GOAL</PixLabel>
-        <div style={{ fontFamily: pixFont, fontSize: 10, margin: "6px 0 8px", lineHeight: 1.6 }}>{GOAL_LABEL[self.goal] ?? self.goal}</div>
-        <Bar frac={self.goalProgress ?? 0} color={P.green} />
-        <div style={{ fontFamily: bodyFont, fontSize: 14, marginTop: 3 }}>{Math.round((self.goalProgress ?? 0) * 100)}% there (motivation — not your grade)</div>
+    </div>
+  );
+}
+
+/** Pending offers (shady supplier / cartel) — a big decision card, front and center. */
+function OfferCard({ state, studentId }) {
+  const [answered, setAnswered] = useState({});
+  const offers = (state.offers ?? []).filter((o) => !answered[o.offerId]);
+  if (!offers.length) return null;
+  const o = offers[0];
+  async function respond(accept) {
+    setAnswered((a) => ({ ...a, [o.offerId]: true }));
+    try {
+      await fetch("/offer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId, offerId: o.offerId, accept }) });
+    } catch { /* poll reconciles */ }
+  }
+  return (
+    <Panel bg={P.lemonSoft} className="pop" style={{ borderWidth: 4 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontSize: 30 }}>{o.emoji}</span>
+        <PixLabel size={11}>{o.title}</PixLabel>
       </div>
+      <div style={{ fontFamily: bodyFont, fontSize: 18, marginBottom: 10 }}>{o.body}</div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn tone="green" size={11} onClick={() => respond(true)} style={{ flex: 1, padding: "14px 8px" }}>
+          {o.type === "cartel_offer" ? "🤝 Join them" : "🛒 Buy the crates"}
+        </Btn>
+        <Btn tone="red" size={11} onClick={() => respond(false)} style={{ flex: 1, padding: "14px 8px" }}>❌ No thanks</Btn>
+      </div>
+      <div style={{ fontFamily: bodyFont, fontSize: 14, opacity: 0.7, marginTop: 6 }}>This choice counts toward your grade — decide like an economist.</div>
     </Panel>
   );
 }
 
-/** The move panel: price + qty with a live ecosystem preview (server-run engine). */
+/** THE hero: set two numbers, press one button. */
 function MovePanel({ state, self, pending, setPending, confirmed, setConfirmed }) {
   const tier = (state.scenario?.tiers ?? []).find((t) => t.role === self.role) ?? { priceBounds: { min: 1, max: 25 }, qtyBounds: { min: 0, max: 40 } };
-  const meta = ROLE_META[self.role];
+  const words = MOVE_WORDS[self.role] ?? MOVE_WORDS.farmer;
   const [proj, setProj] = useState(null);
   const debounce = useRef(null);
   const act = pending ?? { price: self.price, qty: self.lastAction?.qty ?? self.qty };
+
+  // context the student actually needs, in one line
+  const rivals = state.players.filter((p) => p.role === self.role && p.id !== self.id);
+  const cheapestRival = rivals.length ? Math.min(...rivals.map((p) => p.price)) : null;
+  const suppliers = state.players.filter((p) => (self.role === "wholesaler" ? p.role === "farmer" : p.role === "wholesaler"));
+  const cheapestSupply = self.role !== "farmer" && suppliers.length ? Math.min(...suppliers.map((p) => p.price)) : null;
 
   useEffect(() => {
     if (!pending || confirmed) { setProj(null); return; }
@@ -90,84 +116,93 @@ function MovePanel({ state, self, pending, setPending, confirmed, setConfirmed }
 
   async function confirm() {
     try {
-      await fetch("/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId: self.id, action: { price: act.price, qty: act.qty }, intent: pending?.intent ?? `price $${act.price}, ${meta.qtyWord} ${act.qty}` }) });
+      await fetch("/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId: self.id, action: { price: act.price, qty: act.qty }, intent: pending?.intent ?? `price $${act.price}, qty ${act.qty}` }) });
       setConfirmed(true);
     } catch { /* poll reconciles */ }
   }
 
-  const num = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
-  const deltas = Object.entries(proj?.deltas ?? {}).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 4);
+  const set = (patch) => { setConfirmed(false); setPending({ ...act, ...patch }); };
+  const hint = words.hint(self);
 
   return (
-    <Panel>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div>
-          <PixLabel size={8}>{self.role === "restaurant" ? "MEAL PRICE" : "YOUR PRICE"} (${tier.priceBounds.min}–{tier.priceBounds.max})</PixLabel>
-          <input type="number" step="0.5" min={tier.priceBounds.min} max={tier.priceBounds.max} value={act.price}
-            onChange={(e) => { setConfirmed(false); setPending({ ...act, price: num(e.target.value, tier.priceBounds.min, tier.priceBounds.max) }); }}
-            style={{ width: 90, padding: 8, fontSize: 20, marginTop: 4 }} disabled={state.phase !== "collecting"} />
-        </div>
-        <div>
-          <PixLabel size={8}>{meta.qtyWord.toUpperCase()} (0–{tier.qtyBounds.max})</PixLabel>
-          <input type="number" min={0} max={tier.qtyBounds.max} value={act.qty}
-            onChange={(e) => { setConfirmed(false); setPending({ ...act, qty: num(e.target.value, 0, tier.qtyBounds.max) }); }}
-            style={{ width: 80, padding: 8, fontSize: 20, marginTop: 4 }} disabled={state.phase !== "collecting"} />
-        </div>
-        <Btn tone={confirmed ? "green" : "lemon"} size={11} onClick={confirm} disabled={state.phase !== "collecting" || confirmed} style={{ flex: 1, minWidth: 130 }}>
-          {confirmed ? "✓ LOCKED IN" : "▶ LOCK IT IN"}
-        </Btn>
+    <Panel bg={confirmed ? P.greenSoft : P.white}>
+      <PixLabel size={10} style={{ marginBottom: 10 }}>👉 YOUR MOVE THIS ROUND</PixLabel>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+        <Stepper label={words.price} value={act.price} min={tier.priceBounds.min} max={tier.priceBounds.max} step={0.5} prefix="$" onChange={(v) => set({ price: v })} />
+        <Stepper label={words.qty} value={act.qty} min={0} max={tier.qtyBounds.max} step={1} onChange={(v) => set({ qty: v })} />
+      </div>
+      {/* one line of context, not a dashboard */}
+      <div style={{ fontFamily: bodyFont, fontSize: 15, opacity: 0.85, marginBottom: 10 }}>
+        {cheapestRival != null && <>Cheapest competitor: <b>${cheapestRival}</b>. </>}
+        {cheapestSupply != null && <>You buy from suppliers at <b>${cheapestSupply}</b>. </>}
+        {hint}
       </div>
       {proj && !confirmed && (
-        <div className="fade-in" style={{ borderTop: `2px dotted ${P.ink}44`, marginTop: 10, paddingTop: 8 }}>
-          <PixLabel size={8} style={{ marginBottom: 5 }}>🔮 IF EVERYONE ELSE HOLDS…</PixLabel>
-          <div style={{ fontFamily: bodyFont, fontSize: 16, lineHeight: 1.5 }}>
-            You'd {self.role === "restaurant" ? `serve ${proj.you.mealsRound} meals` : `sell ${proj.you.sold} crates`}
-            {" → "}<b style={{ color: proj.you.profitRound >= 0 ? P.green : P.red }}>{proj.you.profitRound >= 0 ? "+" : ""}${proj.you.profitRound}</b>
-            {" "}(vs {proj.baselineProfit >= 0 ? "+" : ""}${proj.baselineProfit} holding)
-            {proj.you.shortfall > 0 && <span style={{ color: P.red }}> · {proj.you.shortfall} crates won't arrive</span>}
-          </div>
-          {deltas.length > 0 && (
-            <div style={{ fontFamily: bodyFont, fontSize: 15, marginTop: 3 }}>
-              🦋 ripples: {deltas.map(([id, d]) => <span key={id} style={{ marginRight: 8, color: d >= 0 ? P.green : P.red }}>{id} {d >= 0 ? "+" : ""}${d}</span>)}
-              {proj.town.pricedOutDelta !== 0 && <span style={{ color: proj.town.pricedOutDelta > 0 ? P.red : P.green }}> · {Math.abs(proj.town.pricedOutDelta)} folk {proj.town.pricedOutDelta > 0 ? "priced out" : "priced back in"}</span>}
-            </div>
-          )}
+        <div className="fade-in" style={{ fontFamily: bodyFont, fontSize: 17, marginBottom: 10, background: P.paper, border: `2px dashed ${P.ink}55`, padding: "6px 8px" }}>
+          🔮 With this move you'd make about{" "}
+          <b style={{ color: proj.you.profitRound >= 0 ? P.green : P.red }}>{proj.you.profitRound >= 0 ? "+" : ""}${proj.you.profitRound}</b> this round
+          {proj.you.shortfall > 0 && <span style={{ color: P.red }}> · ⚠️ suppliers can only deliver part of that order</span>}
         </div>
       )}
+      <Btn tone={confirmed ? "green" : "lemon"} size={13} onClick={confirm} disabled={state.phase !== "collecting" || !state.started || confirmed} style={{ width: "100%", padding: "16px 10px" }}>
+        {!state.started ? "⏸ WAITING FOR THE PROFESSOR" : confirmed ? "✓ DONE — WATCH THE TOWN" : "✅ CONFIRM MY MOVE"}
+      </Btn>
+      {!confirmed && <div style={{ fontFamily: bodyFont, fontSize: 14, opacity: 0.65, marginTop: 6, textAlign: "center" }}>If time runs out, you repeat last round's move.</div>}
     </Panel>
   );
 }
 
-/** Your Ripples — the counterfactual attribution of your LAST move. */
-function RippleCard({ state }) {
-  const r = state.ripple;
-  if (!r) return null;
-  if (!r.moved) {
-    return (
-      <Panel bg={P.paper}>
-        <PixLabel size={9}>🦋 YOUR RIPPLES</PixLabel>
-        <div style={{ fontFamily: bodyFont, fontSize: 16, marginTop: 6 }}>You held steady last round — the town moved without you.</div>
-      </Panel>
-    );
-  }
-  const deltas = Object.entries(r.deltas).filter(([id, d]) => id !== state.you && Math.abs(d) >= 0.5)
-    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 5);
+/** Four numbers a student can absorb in five seconds. */
+function MiniStats({ self }) {
+  const stock = (self.inventory ?? []).reduce((s, b) => s + b.units, 0);
+  const spoilingSoon = (self.inventory ?? []).filter((b) => b.age >= 2).reduce((s, b) => s + b.units, 0);
+  const tile = (emoji, label, value, color) => (
+    <div style={{ border: BORDER, background: P.white, padding: "8px 6px", textAlign: "center" }}>
+      <div style={{ fontSize: 16 }}>{emoji}</div>
+      <div style={{ fontFamily: pixFont, fontSize: 11, color: color ?? P.ink, margin: "3px 0" }}>{value}</div>
+      <div style={{ fontFamily: pixFont, fontSize: 6, opacity: 0.7 }}>{label}</div>
+    </div>
+  );
   return (
-    <Panel bg={P.lemonSoft}>
-      <PixLabel size={9}>🦋 YOUR RIPPLES (last round)</PixLabel>
-      <div style={{ fontFamily: bodyFont, fontSize: 16, margin: "6px 0" }}>
-        Compared to a town where you held steady, your move changed town welfare by{" "}
-        <b style={{ color: r.welfareDelta >= 0 ? P.green : P.red }}>{r.welfareDelta >= 0 ? "+" : ""}${r.welfareDelta}</b>
-        {" "}and touched <b>{r.reach}</b> other {r.reach === 1 ? "business" : "businesses"}.
+    <Panel bg={ROLE_META[self.role]?.tint ?? P.white}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {tile("💰", "CASH", `$${self.cash}`, self.cash < 40 ? P.red : P.ink)}
+        {tile("📦", "STOCK", Math.round(stock * 10) / 10)}
+        {tile("📈", "LAST ROUND", `${self.profitRound >= 0 ? "+" : ""}$${self.profitRound}`, self.profitRound >= 0 ? P.green : P.red)}
+        {tile("🏆", "TOTAL PROFIT", `${self.profitCumulative >= 0 ? "+" : ""}$${self.profitCumulative}`, self.profitCumulative >= 0 ? P.green : P.red)}
       </div>
-      {deltas.map(([id, d]) => (
-        <div key={id} style={{ display: "flex", justifyContent: "space-between", fontFamily: bodyFont, fontSize: 16 }}>
-          <span>{id}</span><b style={{ color: d >= 0 ? P.green : P.red }}>{d >= 0 ? "+" : ""}${d}</b>
-        </div>
-      ))}
-      {r.pricedOutDelta !== 0 && (
-        <div style={{ fontFamily: bodyFont, fontSize: 15, marginTop: 4, color: r.pricedOutDelta > 0 ? P.red : P.green }}>
-          {Math.abs(r.pricedOutDelta)} townsfolk {r.pricedOutDelta > 0 ? "priced out 😤" : "priced back in 🙂"}
+      {spoilingSoon > 0 && (
+        <div style={{ fontFamily: bodyFont, fontSize: 15, color: P.red, marginTop: 8 }}>⚠️ {Math.round(spoilingSoon)} of your crates spoil soon — sell them!</div>
+      )}
+      <div style={{ borderTop: `2px dotted ${P.ink}44`, marginTop: 10, paddingTop: 8 }}>
+        <div style={{ fontFamily: pixFont, fontSize: 8, marginBottom: 5 }}>🎯 {GOAL_LABEL[self.goal] ?? self.goal}</div>
+        <Bar frac={self.goalProgress ?? 0} color={P.green} height={12} />
+      </div>
+    </Panel>
+  );
+}
+
+/** Your butterfly, in one sentence (tap for the numbers). */
+function RippleLine({ state }) {
+  const [open, setOpen] = useState(false);
+  const r = state.ripple;
+  if (!r || !r.moved) return null;
+  const deltas = Object.entries(r.deltas).filter(([id, d]) => id !== state.you && Math.abs(d) >= 0.5)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 4);
+  return (
+    <Panel bg={P.skySoft} style={{ cursor: "pointer" }} onClick={() => setOpen(!open)}>
+      <div style={{ fontFamily: bodyFont, fontSize: 17 }}>
+        🦋 Your last move touched <b>{r.reach}</b> other {r.reach === 1 ? "business" : "businesses"}
+        {r.pricedOutDelta > 0 && <> and priced out <b>{r.pricedOutDelta}</b> townsfolk</>}. <span style={{ opacity: 0.6, fontSize: 14 }}>{open ? "▲" : "▼ tap"}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          {deltas.map(([id, d]) => (
+            <div key={id} style={{ display: "flex", justifyContent: "space-between", fontFamily: bodyFont, fontSize: 16 }}>
+              <span>{id}</span><b style={{ color: d >= 0 ? P.green : P.red }}>{d >= 0 ? "+" : ""}${d}</b>
+            </div>
+          ))}
+          <div style={{ fontFamily: bodyFont, fontSize: 14, opacity: 0.7, marginTop: 4 }}>Compared to a town where you had done nothing.</div>
         </div>
       )}
     </Panel>
@@ -187,47 +222,63 @@ export default function Game({ state, studentId, onReplayRound }) {
   const showBanner = banner && banner.round >= state.round - 1 && dismissed !== banner.id;
   const bannerBg = banner?.id === "frost" ? P.sky : banner?.id === "tax" ? P.lemon : banner?.id === "shady_supplier" ? P.redSoft : P.green;
 
-  const timer = (
+  // The status bar always answers "what should I do right now?"
+  const waiting = !state.started && state.phase === "collecting";
+  const instruction = waiting
+    ? "⏸ You're in! Waiting for the professor to start the game…"
+    : state.phase !== "collecting"
+      ? "🏁 Game over — your report is coming up"
+      : confirmed
+        ? "✓ Move locked in. Watch the town react!"
+        : "👉 Set your price and amount, then CONFIRM";
+
+  const statusBar = (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-        <span style={{ fontFamily: pixFont, fontSize: 11 }}>ROUND {state.round}/{state.totalRounds ?? 12}</span>
-        <span style={{ fontFamily: pixFont, fontSize: 9 }}>{confirmed ? "✓ move locked" : "…deciding"}</span>
-        <span style={{ fontFamily: pixFont, fontSize: 12, color: left <= 8 ? P.red : P.ink }}>⏳ {left != null ? `${left}s` : "—"}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5, gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: pixFont, fontSize: 11 }}>ROUND {Math.min(state.round, state.totalRounds ?? 12)}/{state.totalRounds ?? 12}</span>
+        <span style={{ fontFamily: pixFont, fontSize: 12, color: left <= 8 ? P.red : P.ink }}>⏳ {waiting ? "—" : left != null ? `${left}s` : "—"}</span>
       </div>
-      <Bar frac={left != null ? frac : 1} color={left <= 8 ? P.red : P.lemon} height={16} />
+      <Bar frac={waiting ? 1 : left != null ? frac : 1} color={left <= 8 && !waiting ? P.red : P.lemon} height={14} />
+      <div className={waiting ? "bob" : undefined} style={{ fontFamily: pixFont, fontSize: 9, marginTop: 7, padding: "8px 10px", background: confirmed && !waiting ? P.greenSoft : P.lemonSoft, border: BORDER, lineHeight: 1.7 }}>
+        {instruction}
+      </div>
     </div>
   );
 
-  const centerCol = (
+  const moveSide = (
     <div>
-      {timer}
+      <OfferCard state={state} studentId={studentId} />
+      <MovePanel state={state} self={self} pending={pending} setPending={setPending} confirmed={confirmed} setConfirmed={setConfirmed} />
+      <MiniStats self={self} />
+      <RippleLine state={state} />
+      <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} onPropose={(a) => { setConfirmed(false); setPending(a); }} />
+    </div>
+  );
+
+  const townSide = (
+    <div>
       {showBanner && <Banner emoji={banner.emoji} title={banner.title} sub={state.market?.news} bg={bannerBg} onClose={() => setDismissed(banner.id)} />}
       <Town state={state} studentId={studentId} />
-      <MovePanel state={state} self={self} pending={pending} setPending={setPending} confirmed={confirmed} setConfirmed={setConfirmed} />
     </div>
   );
-  const rightCol = (
-    <div>
-      <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} onPropose={(a) => { setConfirmed(false); setPending(a); }} />
-      <div style={{ marginTop: 14 }}><RippleCard state={state} /></div>
-    </div>
-  );
-  const leftCol = <RoleDash self={self} state={state} />;
 
   return (
     <div>
-      <Wordmark sub={`${ROLE_META[self.role]?.emoji ?? ""} ${self.name}`} />
+      <Wordmark sub={`${ROLE_META[self.role]?.emoji ?? ""} ${self.name} — ${ROLE_META[self.role]?.label} ${self.id}`} />
+      {statusBar}
       {wide ? (
-        <div style={{ display: "grid", gridTemplateColumns: "290px 1fr 330px", gap: 14, alignItems: "start" }}>
-          <div>{leftCol}</div>
-          <div>{centerCol}</div>
-          <div style={{ position: "sticky", top: 14 }}>{rightCol}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14, alignItems: "start" }}>
+          <div>{townSide}</div>
+          <div style={{ position: "sticky", top: 14 }}>{moveSide}</div>
         </div>
       ) : (
         <div>
-          {centerCol}
-          {leftCol}
-          {rightCol}
+          <OfferCard state={state} studentId={studentId} />
+          <MovePanel state={state} self={self} pending={pending} setPending={setPending} confirmed={confirmed} setConfirmed={setConfirmed} />
+          {townSide}
+          <MiniStats self={self} />
+          <RippleLine state={state} />
+          <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} onPropose={(a) => { setConfirmed(false); setPending(a); }} />
         </div>
       )}
     </div>
