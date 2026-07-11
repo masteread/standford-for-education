@@ -1,0 +1,21 @@
+{
+  "id": "lemon_wars",
+  "title": "Lemon Wars",
+  "rounds": 12,
+  "roundSeconds": 20,
+  "good": "lemons",
+  "demand": { "intercept": 140, "slope": 10, "note": "D = max(0, 140 - 10 * avgPrice)" },
+  "switching": { "coeff": 0.2, "cap": 0.5, "note": "shift toward cheaper grower = clamp(0.2 * (priceB-priceA), -0.5, 0.5)" },
+  "unitCost": 2,
+  "startCash": 100,
+  "startCrates": 20,
+  "spoilAfterRounds": 3,
+  "priceBounds": { "min": 1, "max": 15 },
+  "produceBounds": { "min": 0, "max": 100 },
+  "shock": { "round": 8, "name": "FROST", "newUnitCost": 4, "news": "FROST: input costs doubled" },
+  "elasticityTwist": {
+    "enabled": false,
+    "good": "medicine",
+    "demand": { "intercept": 60, "slope": 2, "note": "inelastic — STRETCH ONLY, do not build before 4:15" }
+  }
+}

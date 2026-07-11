@@ -6,6 +6,31 @@
 
 An agent-native market simulation where university students learn economic theory by living it: they command delegate agents in plain English, pursue goals the orchestrator assigns them, watch every decision cascade through a shared market, and get graded on decision quality — not outcomes, not essays.
 
+---
+
+## v2.1 — Build decisions & integration status (2026-07-11, Person A)
+
+> **Person B: pull `main` after this branch merges. Nothing here changes your files or the data contracts — it records what Person A built and two questions for you.**
+
+**Decisions locked:**
+- **Language stays JavaScript.** TS ("loose TS") was considered, but Person B already committed the whole agents/assessment layer in `.js`/`.jsx` under `ripple/`. To keep one coherent repo on a 4-hour clock, Person A matched that. The data contract lives in `ripple/shared/contracts.md` (unchanged).
+- **Single-origin serving (no Vite, no proxy).** The client is bundled with **esbuild** (already a devDep) into `ripple/client/dist`, and the Express world server serves it as static files. That means the client's relative `fetch("/join" | "/state" | "/intent" | …)` — exactly how `Join.jsx` and `Report.jsx` already call — works with zero proxy config.
+- **Run it:** `cd ripple && npm install && npm run dev` → esbuild watches the client + the world server boots on `http://localhost:3001`. `?admin` in the URL shows the FROST / seed / reset buttons. `RIPPLE_MOCK=1` forces the offline regex delegate + heuristic examiner (no API key needed).
+
+**Person A shipped (World):** `server/index.js` (tick loop + all routes), `server/market.js` (exact formulas + cascade), `server/cascade.js`, `client/src/{App,Game,Cascade}.jsx` + `main.jsx` + `ui.js`, `client/index.html`, `shared/scenario.json`, `scripts/{dev,build-client}.js`. Verified end-to-end offline: join→intent→confirm→resolve, R1 hand-check (both $5 → D=90 → 45/45 ✓), elasticity flag fires, FROST via button, `/report` returns your examiner's model with cohort percentiles.
+
+**Wiring into your code (no changes needed on your side):**
+- `POST /join` → calls your `castStudent({name, index})`; returns `{studentId, roleCard, castingReason, goal}` — your `Join.jsx` already reads these.
+- `POST /intent` → calls your `runDelegate({studentId, intent, visibleState, ownState, lastAction})`; response maps `question` → `clarifyingQuestion`.
+- `GET /report/:id` → builds the cohort (joined humans + your `seededCohort()` for percentiles) and calls your `gradeCohort(cohort, {cascade})`, returns `models[id]` — your `Report.jsx` already reads it.
+- `saveState` / `appendDecision` from your `butterbase.js` are called best-effort (never block the tick).
+
+**Two questions for you (answer when you're free — both have safe defaults already running):**
+1. **`goalProgress` ownership.** The `TickState.growers[].goalProgress` field is currently computed **engine-side** by Person A with a simple per-goal formula (profit vs a target, cumulative share, cash>80, spoilage ratio). If your orchestrator/examiner would rather own it, say so and A will stop computing it. It's shown, never graded — low stakes.
+2. **`visibleState` subset.** `GET /state` currently shows a viewer their **own** full record but only the rival's `{id, name, price, sold}` (cash/inventory/goal hidden — so inferring the rival's objective stays a real skill). Your examiner's heuristic reads `visibleState.growers[].price`, which is preserved. Confirm this subset is enough for grading, or tell A which fields to add.
+
+---
+
 ## Doability verdict
 
 Core loop is 4 hours for two experienced builders IF cut lines are respected. Negotiation and second scenarios are stretch-only. Feature freeze at 4:15 is law.
