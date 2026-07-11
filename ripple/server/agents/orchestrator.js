@@ -11,7 +11,7 @@ import { getSkillMemory } from "../evermind.js";
 export const SEAT_ORDER = ["F1", "G1", "W1", "R1", "F2", "G2", "R2", "F3", "G3", "W2", "R3"];
 
 export const GOAL_LABELS = {
-  max_profit: "Make the most PROFIT over 12 rounds.",
+  max_profit: "Make the most PROFIT by the final round.",
   market_share: "Capture the BIGGEST share of your tier's market.",
   survive_frost: "Survive the frost with cash above $60.",
   zero_spoilage: "End with (almost) ZERO spoiled crates.",

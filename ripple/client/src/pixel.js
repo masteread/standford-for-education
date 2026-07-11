@@ -151,7 +151,7 @@ export function Wordmark({ sub }) {
 
 /** Goal label lookup shared by cards/reports. */
 export const GOAL_LABEL = {
-  max_profit: "Make the most PROFIT over 12 rounds",
+  max_profit: "Make the most PROFIT by the final round",
   market_share: "Capture the BIGGEST share of your tier",
   survive_frost: "Survive the frost with CASH over $60",
   zero_spoilage: "End with ZERO spoiled crates",

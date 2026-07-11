@@ -1,8 +1,8 @@
 {
   "id": "lemonville-ecosystem",
   "title": "Lemonville",
-  "rounds": 12,
-  "roundSeconds": 35,
+  "rounds": 5,
+  "roundSeconds": 24,
   "good": "lemons",
   "tiers": [
     {
@@ -86,7 +86,7 @@
   },
   "events": [
     {
-      "round": 4,
+      "round": 2,
       "id": "frost",
       "type": "frost",
       "emoji": "❄️",
@@ -97,8 +97,9 @@
       "task": "frost_response"
     },
     {
-      "round": 6,
+      "round": 99,
       "id": "tax",
+      "demoNote": "parked for the 5-round demo (one event per round); restore to round 6 for the full 12-round class",
       "type": "tax",
       "emoji": "📜",
       "title": "RETAIL TAX: $1/sale",
@@ -108,7 +109,7 @@
       "task": "tax_response"
     },
     {
-      "round": 8,
+      "round": 3,
       "id": "shady_supplier",
       "type": "supplier_offer",
       "emoji": "🕵️",
@@ -121,7 +122,7 @@
       "task": "quality_choice"
     },
     {
-      "round": 10,
+      "round": 4,
       "id": "cartel",
       "type": "cartel_offer",
       "emoji": "🤝",
@@ -129,9 +130,9 @@
       "concept": "Nash equilibrium (collusion & defection)",
       "news": "Whispers in every tier of the chain: hold prices high, together…",
       "tierPrice": { "farmer": 5, "wholesaler": 8, "grocer": 10, "restaurant": 16 },
-      "npcDefectsRound": 11,
+      "npcDefectsRound": 5,
       "task": "cartel_reasoning"
     }
   ],
-  "freePlayTask": { "task": "free_play", "rounds": [1, 2, 3], "concept": "equilibrium discovery across a supply chain + spoilage discipline" }
+  "freePlayTask": { "task": "free_play", "rounds": [1], "concept": "equilibrium discovery across a supply chain + spoilage discipline" }
 }

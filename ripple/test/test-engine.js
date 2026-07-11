@@ -84,10 +84,10 @@ for (let r = 1; r <= 5; r++) {
 }
 ok(sSpoil.players.W1.spoiledCumulative > 0, `hoarded crates spoiled (W1 lost ${sSpoil.players.W1.spoiledCumulative})`);
 
-// ── Full 12-round run with gentle adaptive policies ───────────────────────────
+// ── Full game run (scenario.rounds) with gentle adaptive policies ─────────────
 let s = initialState(scenario);
 const impacts = [];
-console.log("\n12-round run:");
+console.log(`\n${scenario.rounds}-round run:`);
 for (let round = 1; round <= scenario.rounds; round++) {
   const decisions = {};
   for (const p of Object.values(s.players)) {
@@ -96,8 +96,9 @@ for (let round = 1; round <= scenario.rounds; round++) {
     let price = p.price + (p.sold > 0 && stock < 2 ? 0.5 : stock > 15 ? -0.5 : 0);
     decisions[p.id] = { price, qty: p.lastAction.qty };
   }
-  if (round === 4) for (const f of ["F1", "F2", "F3"]) s.players[f].unitCost = 4; // frost, applied like events.js will
-  if (round === 4) s.frostRound = 4;
+  const frostRound = scenario.events.find((e) => e.type === "frost")?.round ?? 4;
+  if (round === frostRound) for (const f of ["F1", "F2", "F3"]) s.players[f].unitCost = 4; // frost, applied like events.js will
+  if (round === frostRound) s.frostRound = frostRound;
   if (round === 6) s.salesTax = 1;
   const res = resolveEcosystem(s, decisions, scenario);
   impacts.push(computeImpact(s, decisions, scenario, res));
@@ -109,7 +110,7 @@ for (let round = 1; round <= scenario.rounds; round++) {
     `pricedOut ${String(m.pricedOut).padStart(2)} | avg F$${m.avgPrice.farmer} W$${m.avgPrice.wholesaler} G$${m.avgPrice.grocer} R$${m.avgPrice.restaurant} | trades ${res.trades.length}`
   );
 }
-ok(s.history.length === 12, "12 rounds of town history recorded");
+ok(s.history.length === scenario.rounds, `${scenario.rounds} rounds of town history recorded`);
 ok(s.history.every((h) => Number.isFinite(h.welfare)), "welfare finite every round");
 const summary = summarizeImpact(impacts, Object.keys(s.players));
 ok(Object.keys(summary).length === 11, "impact summary covers all players");
