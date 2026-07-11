@@ -1,13 +1,12 @@
-// Express server + deterministic tick loop. Owns the Lemonville world; the LLM
-// agents plug in through the frozen HTTP contract (shared/contracts.md).
+// Express server + deterministic tick loop for the Lemonville ECOSYSTEM.
+// The class is the economy: humans take seats in the chain (3 farms, 2 depots,
+// 3 grocers, 3 cafés), scripted NPCs fill the rest, 24 simulated townsfolk spend
+// at the bottom. All market physics live in shared/ecosystem.js (pure); this file
+// owns time, seats, offers, and the HTTP contract. Clients poll /state every 2s.
 //
-// Tick model: clients poll GET /state every 2s (no WebSockets — per spec).
-// A round resolves when every active human has confirmed OR the 20s timer fires.
-// Empty slots / single-phone play are driven by a simple SCRIPTED NPC (not an LLM):
-// it matches the rival's price with a 1-round lag and defects from the cartel at R11.
-//
-// Scripted events fire at the START of their round (frost R4, tax R6, shady
-// supplier R8, cartel R10) so players decide under them. See server/events.js.
+// Butterfly attribution: every resolve also runs shared/impact.js counterfactuals
+// (re-run the round minus each mover, diff the town) → "Your Ripples" + the
+// ecosystem-impact score. Real diffs, never narration.
 
 import express from "express";
 import os from "node:os";
@@ -15,186 +14,148 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 
-import { resolveRound, totalCrates } from "./market.js";
+import { initialState, resolveEcosystem, totalUnits, tierOf } from "../shared/ecosystem.js";
+import { computeImpact, summarizeImpact } from "../shared/impact.js";
 import { applyEvent, eventForRound, eventById, resolveOffer, pendingOffers } from "./events.js";
-import { castStudent } from "./agents/orchestrator.js";
+import { npcDecision } from "./npc.js";
+import { castStudent, GOAL_LABELS } from "./agents/orchestrator.js";
 import { runDelegate } from "./agents/delegate.js";
-import { gradeCohort } from "./agents/examiner.js";
+import { gradeCohort, TASK_IDS, DIMENSIONS } from "./agents/examiner.js";
 import { saveState, appendDecision, saveOverride, getOverrides } from "./storage.js";
-import { seededCohort, sampleCascade } from "../test/fixtures.js";
+import { seededCohort } from "../test/fixtures.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const scenario = JSON.parse(readFileSync(path.join(__dirname, "../shared/scenario.json"), "utf8"));
-
-const SLOT_IDS = ["A", "B"]; // Lemonville is a duopoly
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const PORT = process.env.PORT || 3001;
+const round2 = (v) => Math.round(v * 100) / 100;
 
-// Best shareable URL for the QR / join link: PUBLIC_URL (tunnel) if set, else the
-// machine's LAN IP so phones on the same wifi can scan and join.
 function shareUrl() {
   if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/?$/, "/");
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const ni of list ?? []) {
-      if (ni.family === "IPv4" && !ni.internal) return `http://${ni.address}:${PORT}/`;
-    }
-  }
+  for (const list of Object.values(os.networkInterfaces()))
+    for (const ni of list ?? []) if (ni.family === "IPv4" && !ni.internal) return `http://${ni.address}:${PORT}/`;
   return `http://localhost:${PORT}/`;
 }
 
 // ── Game state ────────────────────────────────────────────────────────────────
-function freshGrower(id, name, goal) {
-  return {
-    id,
-    name: name ?? `Stand ${id}`,
-    price: 5,
-    produced: 0,
-    sold: 0,
-    inventory: [{ age: 0, crates: scenario.startCrates }],
-    cash: scenario.startCash,
-    unitCost: scenario.unitCost,
-    goal: goal ?? "max_profit",
-    goalProgress: 0,
-    // cumulative bookkeeping for goal progress + reporting
-    soldCumulative: 0,
-    producedCumulative: scenario.startCrates,
-    spoiledCumulative: 0,
-    prevRevenue: null,
-    reputationUntil: 0, // rounds through which a bad-lemon boycott applies
-    badStockPending: false, // holding unsold shady stock
-    isHuman: false,
-    lastAction: { price: 5, produce: 20 },
-  };
-}
-
 function newGame() {
   return {
     scenario,
-    round: 1,
-    phase: "collecting", // collecting | resolving | done
-    growers: {
-      A: freshGrower("A", "Stand A"),
-      B: freshGrower("B", "Stand B"),
-    },
-    market: { totalDemand: null, avgPrice: null, news: null },
-    cascade: [],
-    decisionLog: [],
+    state: initialState(scenario), // the pure-engine world (players, folk, history)
+    phase: "collecting", // collecting | done
+    started: false,
+    joinOrder: [],
     pendingDecisions: {},
     confirmed: new Set(),
-    joinOrder: [], // studentIds in join order
-    roundStartedAt: Date.now(),
-    started: false,
-    frostDone: false,
-    // event machinery
-    firedEvents: new Set(),
+    decisionLog: [],
+    cascadeLog: [],
+    tradeLog: [],
+    ripples: [], // one computeImpact() map per resolved round
+    lastResolution: null, // {round, trades, folkTrips, cascade, metrics, resolvedAt} → the client animates exactly this
     mailbox: {},
     banner: null,
-    salesTax: 0,
-    cartel: null,
-    repPenalty: 0,
-    repRounds: 0,
+    news: null,
+    firedEvents: new Set(),
+    cartels: {},
+    roundStartedAt: Date.now(),
+    seededCohort: null,
   };
 }
-
 let game = newGame();
 
-// Fire the scripted event (if any) for the current round. Called on start + advance.
 function startRound() {
-  const ev = eventForRound(scenario, game.round);
+  const ev = eventForRound(scenario, game.state.round);
   if (ev) applyEvent(game, ev);
 }
 
-// ── TickState builder (with per-viewer visibility filtering) ──────────────────
-function buildTickState(g, viewerId) {
-  const growers = Object.keys(g.growers).map((id) => {
-    const gr = g.growers[id];
-    const isSelf = viewerId === id || viewerId === "admin";
-    if (isSelf) {
-      return {
-        id: gr.id, name: gr.name, price: gr.price, produced: gr.produced, sold: gr.sold,
-        inventory: gr.inventory.map((b) => ({ ...b })), cash: gr.cash, unitCost: gr.unitCost,
-        goal: gr.goal, goalProgress: gr.goalProgress,
-      };
-    }
-    // Rival is public only: price + last sold. Cash/inventory/goal stay hidden
-    // (inferring the rival's objective from behavior is the skill we're teaching).
-    return { id: gr.id, name: gr.name, price: gr.price, sold: gr.sold };
+// ── Per-viewer state filtering ────────────────────────────────────────────────
+// Public: prices, stock levels, reputation flags — it's a town, shelves are visible.
+// Private: cash, goals, exact inventory ages, WTP of townsfolk (the demand curve
+// stays hidden — discovering it IS the game).
+function buildTickState(viewerId) {
+  const round = game.state.round;
+  const players = Object.values(game.state.players).map((p) => {
+    const pub = {
+      id: p.id, role: p.role, name: p.name, isHuman: p.isHuman,
+      price: p.price, sold: p.sold, stock: Math.round(totalUnits(p.inventory)),
+      badRep: p.reputationUntil >= round,
+    };
+    if (p.id !== viewerId && viewerId !== "admin") return pub;
+    return {
+      ...pub,
+      cash: p.cash, qty: p.qty, unitCost: p.unitCost,
+      inventory: p.inventory.map((b) => ({ ...b })),
+      goal: p.goal, goalProgress: p.goalProgress,
+      profitRound: p.profitRound, profitCumulative: p.profitCumulative,
+      shortfall: p.shortfall, spoiledCumulative: p.spoiledCumulative,
+      mealsServed: p.mealsServed, folkServed: p.folkServed, lastSupplier: p.lastSupplier,
+      lastAction: { ...p.lastAction },
+    };
   });
   return {
-    round: g.round,
-    phase: g.phase,
-    growers,
-    market: { ...g.market },
-    cascade: g.cascade,
+    round,
+    phase: game.phase,
+    started: game.started,
+    players,
+    folk: game.state.folk.map((f) => ({ id: f.id, emoji: f.emoji })), // WTP stays hidden
+    cascade: game.cascadeLog.slice(-250),
+    market: { news: game.news, metrics: game.state.history.at(-1) ?? null, history: game.state.history },
   };
 }
 
-// ── Scripted NPC for empty slots / single-phone play (NOT an LLM) ─────────────
-// Matches the rival's price with a 1-round lag, defends margin after frost,
-// cooperates the round a cartel forms, then DEFECTS (undercuts) from R11.
-function botDecision(game, id) {
-  const gr = game.growers[id];
-  const rivalId = Object.keys(game.growers).find((x) => x !== id);
-  const rival = game.growers[rivalId];
-  const cost = gr.unitCost;
-  const cartel = game.cartel;
-  let price = gr.price;
-  let note = "(NPC) matched the rival with a lag";
+const slimScenario = {
+  rounds: scenario.rounds,
+  roundSeconds: scenario.roundSeconds,
+  folkCount: scenario.folk.count,
+  tiers: scenario.tiers.map((t) => ({
+    role: t.role, label: t.label, emoji: t.emoji, building: t.building, seats: t.seats,
+    priceBounds: t.priceBounds, qtyBounds: t.qtyBounds, qtyVerb: t.qtyVerb,
+    mealsPerCrate: t.mealsPerCrate ?? null, unitCost: t.unitCost ?? null,
+  })),
+  goalLabels: GOAL_LABELS,
+};
 
-  if (cartel && game.round >= cartel.npcDefectsRound) {
-    price = Math.max(cost + 1, (rival?.price ?? cartel.price) - 1); // defect: undercut the cartel
-    note = "(NPC) defected from the cartel — undercut for market share";
-  } else if (cartel && game.round >= cartel.round) {
-    price = cartel.price; // cooperate at the cartel price
-    note = `(NPC) cooperated at the cartel price $${cartel.price}`;
-  } else if (rival) {
-    if (rival.price < gr.price - 0.25) price = Math.max(cost + 1, rival.price - 0.25); // undercut → follow down
-    else if (rival.price > gr.price + 1) price = gr.price + 0.5; // umbrella → capture a little margin
+// ── Round resolution ──────────────────────────────────────────────────────────
+function collectDecisions() {
+  const decisions = {};
+  for (const p of Object.values(game.state.players)) {
+    const pending = game.pendingDecisions[p.id];
+    if (pending) decisions[p.id] = { price: pending.price, qty: pending.qty };
+    else if (p.isHuman) decisions[p.id] = { ...p.lastAction }; // no input → hold
+    else decisions[p.id] = npcDecision(game, p.id);
   }
-  if (cost > 2) price = Math.max(price, cost + 2); // frost/tax → defend margin
-
-  price = clamp(Math.round(price * 4) / 4, 1, 15); // quarter-dollar, clamped
-  const produce = clamp(gr.sold > 0 ? gr.sold + 5 : 25, 15, 60);
-  return { price, produce, intent: note, source: "bot" };
+  return decisions;
 }
 
-// ── Round resolution + advance ────────────────────────────────────────────────
 function resolveAndAdvance() {
-  game.phase = "resolving";
+  const decisions = collectDecisions();
+  const res = resolveEcosystem(game.state, decisions, scenario);
+  const impact = computeImpact(game.state, decisions, scenario, res);
 
-  // Fill any missing decision (NPC, or humans who didn't confirm → repeat last).
-  for (const id of Object.keys(game.growers)) {
-    if (!game.pendingDecisions[id]) {
-      const gr = game.growers[id];
-      game.pendingDecisions[id] = gr.isHuman
-        ? { ...gr.lastAction, intent: "(no input) repeat last action", source: "repeat" }
-        : botDecision(game, id);
-    }
-  }
+  game.state = res.state;
+  game.cascadeLog.push(...res.cascade);
+  game.tradeLog.push(...res.trades);
+  game.ripples.push(impact);
+  game.lastResolution = {
+    round: res.metrics.round,
+    trades: res.trades,
+    folkTrips: res.folkTrips,
+    cascade: res.cascade,
+    metrics: res.metrics,
+    resolvedAt: Date.now(),
+  };
+  saveState(res.metrics.round, { metrics: res.metrics, trades: res.trades }).catch(() => {});
 
-  resolveRound(game);
-
-  // Persist snapshot (best-effort; never blocks).
-  saveState(game.round, buildTickState(game, "admin")).catch(() => {});
-
-  // Remember last actions for repeat/NPC logic.
-  for (const id of Object.keys(game.growers)) {
-    const dec = game.pendingDecisions[id];
-    game.growers[id].lastAction = { price: dec.price, produce: dec.produce };
-  }
-
-  game.round += 1;
+  game.state.round += 1;
   game.confirmed = new Set();
   game.pendingDecisions = {};
   game.roundStartedAt = Date.now();
-  game.phase = game.round > scenario.rounds ? "done" : "collecting";
-  if (game.phase === "collecting") startRound(); // fire this round's scripted event
+  if (game.state.round > scenario.rounds) game.phase = "done";
+  else startRound();
 }
 
-// Tick: check every 500ms whether the round should resolve.
 setInterval(() => {
   if (game.phase !== "collecting" || !game.started) return;
-  const humans = game.joinOrder.filter((id) => game.growers[id]?.isHuman);
+  const humans = game.joinOrder;
   const allConfirmed = humans.length > 0 && humans.every((id) => game.confirmed.has(id));
   const elapsed = Date.now() - game.roundStartedAt;
   if (allConfirmed || elapsed >= scenario.roundSeconds * 1000) resolveAndAdvance();
@@ -204,184 +165,203 @@ setInterval(() => {
 const app = express();
 app.use(express.json());
 
-// GET /config → the shareable join URL for the QR code (works from phones).
-app.get("/config", (req, res) => res.json({ joinUrl: shareUrl() }));
+app.get("/config", (req, res) => res.json({ joinUrl: shareUrl(), scenario: slimScenario }));
 
-// POST /join {name} → assign the next open slot via the orchestrator.
+// POST /join {name} → seat + role + goal via the orchestrator.
 app.post("/join", async (req, res) => {
   const name = String(req.body?.name ?? "").trim() || "Anonymous";
-  const slot = SLOT_IDS.find((id) => !game.growers[id].isHuman);
-  if (!slot) return res.status(409).json({ error: "market full (2 stands max)" });
-
-  const index = game.joinOrder.length;
   let cast;
   try {
-    cast = await castStudent({ name, index });
+    cast = await castStudent({ name, index: game.joinOrder.length, takenSeats: game.joinOrder, game });
   } catch (err) {
-    cast = { studentId: slot, name, goal: "max_profit", castingReason: "fallback: orchestrator error", roleCard: null };
+    console.warn(`[join] orchestrator error: ${err.message}`);
+    cast = null;
   }
-  const gr = game.growers[slot];
-  gr.name = name;
-  gr.goal = cast.goal ?? gr.goal;
-  gr.isHuman = true;
-  game.joinOrder.push(slot);
-  game.started = true;
-  game.roundStartedAt = Date.now();
-  startRound(); // in case they join on an event round
+  if (!cast) return res.status(409).json({ error: "town full (11 seats)" });
 
-  res.json({ studentId: slot, roleCard: cast.roleCard, castingReason: cast.castingReason, goal: gr.goal });
+  const p = game.state.players[cast.studentId];
+  p.name = name;
+  p.isHuman = true;
+  p.goal = cast.goal;
+  game.joinOrder.push(cast.studentId);
+  game.roundStartedAt = Date.now();
+  if (!game.started) {
+    game.started = true;
+    startRound();
+  }
+  res.json({ studentId: cast.studentId, role: cast.role, roleCard: cast.roleCard, castingReason: cast.castingReason, goal: cast.goal, scenario: slimScenario });
 });
 
-// GET /state/:studentId → TickState filtered to what that student may see + UI extras.
+// GET /state/:id → filtered world + everything the client animates.
 app.get("/state/:studentId", (req, res) => {
   const id = req.params.studentId;
-  if (!game.growers[id] && id !== "admin") return res.status(404).json({ error: "unknown student" });
+  if (!game.state.players[id] && id !== "admin") return res.status(404).json({ error: "unknown player" });
+  const lastRipple = game.ripples.at(-1)?.[id] ?? null;
+  const myRole = game.state.players[id]?.role;
+  const myCartel = myRole && game.cartels[myRole]
+    ? { price: game.cartels[myRole].price, round: game.cartels[myRole].round, member: game.cartels[myRole].members.has(id) }
+    : null;
   res.json({
-    ...buildTickState(game, id),
+    ...buildTickState(id),
     you: id,
-    townsfolk: scenario.townsfolk,
+    scenario: slimScenario,
     banner: game.banner,
-    salesTax: game.salesTax,
-    cartel: game.cartel ? { price: game.cartel.price, round: game.cartel.round } : null,
+    salesTax: game.state.salesTax,
+    cartel: myCartel,
     offers: pendingOffers(game, id),
+    lastResolution: game.lastResolution,
+    ripple: lastRipple,
     roundStartedAt: game.roundStartedAt,
     roundSeconds: scenario.roundSeconds,
     totalRounds: scenario.rounds,
   });
 });
 
-// POST /intent {studentId, text} → delegate turns intent into an action (or a question).
+// POST /intent {studentId, text} → delegate parses strategy into {price, qty}.
 app.post("/intent", async (req, res) => {
   const { studentId, text } = req.body ?? {};
-  const gr = game.growers[studentId];
-  if (!gr) return res.status(404).json({ error: "unknown student" });
-  const visibleState = buildTickState(game, studentId);
-  const ownState = { id: gr.id, price: gr.price, cash: gr.cash, unitCost: gr.unitCost, inventory: gr.inventory };
+  const p = game.state.players[studentId];
+  if (!p) return res.status(404).json({ error: "unknown player" });
+  const visibleState = buildTickState(studentId);
   try {
-    const out = await runDelegate({ studentId, intent: text, visibleState, ownState, lastAction: gr.lastAction });
+    const out = await runDelegate({
+      studentId, intent: text, visibleState,
+      role: p.role, tier: tierOf(scenario, p.role),
+      ownState: { id: p.id, role: p.role, price: p.price, cash: p.cash, unitCost: p.unitCost, stock: Math.round(totalUnits(p.inventory)) },
+      lastAction: p.lastAction,
+    });
     res.json({ action: out.action, clarifyingQuestion: out.question ?? null, reply: out.reply ?? null, source: out.source });
-  } catch (err) {
-    res.json({ action: gr.lastAction, clarifyingQuestion: null, source: "error-fallback" });
+  } catch {
+    res.json({ action: p.lastAction, clarifyingQuestion: null, source: "error-fallback" });
   }
 });
 
-// POST /confirm {studentId, action, intent} → queue the decision for the next tick.
-app.post("/confirm", (req, res) => {
-  const { studentId, action, intent } = req.body ?? {};
-  const gr = game.growers[studentId];
-  if (!gr) return res.status(404).json({ error: "unknown student" });
-  if (game.phase !== "collecting") return res.status(409).json({ error: "round not open" });
-
-  const visibleState = buildTickState(game, studentId);
-  game.pendingDecisions[studentId] = { price: Number(action?.price), produce: Number(action?.produce), intent, source: "human" };
-  game.confirmed.add(studentId);
-
-  const entry = { round: game.round, studentId, intent: String(intent ?? ""), action, visibleState };
-  game.decisionLog.push(entry);
-  appendDecision(entry).catch(() => {}); // best-effort; never blocks the tick
-
-  res.json({ ok: true, confirmed: [...game.confirmed], round: game.round });
+// POST /preview {studentId, action} → project the pending move on the whole town.
+// Others hold last action; diff vs "you hold too" — the live butterfly preview.
+app.post("/preview", (req, res) => {
+  const { studentId, action } = req.body ?? {};
+  const p = game.state.players[studentId];
+  if (!p) return res.status(404).json({ error: "unknown player" });
+  const hold = {};
+  for (const q of Object.values(game.state.players)) hold[q.id] = { ...q.lastAction };
+  const base = resolveEcosystem(game.state, hold, scenario);
+  const proj = resolveEcosystem(game.state, { ...hold, [studentId]: { price: Number(action?.price), qty: Number(action?.qty) } }, scenario);
+  const you = proj.state.players[studentId];
+  const deltas = {};
+  for (const q of Object.keys(game.state.players)) {
+    const d = round2(proj.state.players[q].profitRound - base.state.players[q].profitRound);
+    if (q !== studentId && Math.abs(d) >= 0.5) deltas[q] = d;
+  }
+  res.json({
+    you: { sold: you.sold, bought: you.bought, profitRound: you.profitRound, folkServed: you.folkServed, mealsRound: you.mealsRound, shortfall: you.shortfall },
+    baselineProfit: base.state.players[studentId].profitRound,
+    deltas,
+    town: {
+      welfareDelta: round2(proj.metrics.welfare - base.metrics.welfare),
+      pricedOutDelta: proj.metrics.pricedOut - base.metrics.pricedOut,
+      folkTrips: proj.folkTrips,
+    },
+  });
 });
 
-// POST /offer {studentId, offerId, accept} → accept/refuse a mailbox offer (a graded decision too).
+// POST /confirm {studentId, action:{price, qty}, intent} → queue for the tick.
+app.post("/confirm", (req, res) => {
+  const { studentId, action, intent } = req.body ?? {};
+  const p = game.state.players[studentId];
+  if (!p) return res.status(404).json({ error: "unknown player" });
+  if (game.phase !== "collecting") return res.status(409).json({ error: "round not open" });
+
+  game.pendingDecisions[studentId] = { price: Number(action?.price), qty: Number(action?.qty), intent, source: "human" };
+  game.confirmed.add(studentId);
+
+  const entry = { round: game.state.round, studentId, role: p.role, intent: String(intent ?? ""), action, visibleState: buildTickState(studentId) };
+  game.decisionLog.push(entry);
+  appendDecision(entry).catch(() => {});
+  res.json({ ok: true, confirmed: [...game.confirmed], round: game.state.round });
+});
+
+// POST /offer {studentId, offerId, accept} → shady/cartel choices (graded too).
 app.post("/offer", (req, res) => {
   const { studentId, offerId, accept } = req.body ?? {};
-  const gr = game.growers[studentId];
-  if (!gr) return res.status(404).json({ error: "unknown student" });
+  if (!game.state.players[studentId]) return res.status(404).json({ error: "unknown player" });
   const result = resolveOffer(game, studentId, offerId, Boolean(accept));
   if (!result.ok) return res.status(409).json(result);
-
-  const decision = { ...result.decision, visibleState: buildTickState(game, studentId) };
+  const decision = { ...result.decision, role: game.state.players[studentId].role, visibleState: buildTickState(studentId) };
   game.decisionLog.push(decision);
   appendDecision(decision).catch(() => {});
   res.json({ ok: true, offer: result.offer, offers: pendingOffers(game, studentId) });
 });
 
-// POST /admin/shock → the demo button. Injects FROST immediately at the current round.
-app.post("/admin/shock", (req, res) => {
-  const banner = applyEvent(game, eventById(scenario, "frost"));
-  res.json({ ok: true, news: game.market.news, banner, round: game.round });
-});
-
-// POST /admin/event {id} → inject any scripted event early.
-app.post("/admin/event", (req, res) => {
-  const ev = eventById(scenario, req.body?.id);
-  if (!ev) return res.status(404).json({ error: "unknown event id" });
-  const banner = applyEvent(game, ev);
-  res.json({ ok: true, banner, news: game.market.news, round: game.round });
-});
-
-// POST /admin/start → begin the round timer (and fire round-1 event if any).
+// ── Admin ─────────────────────────────────────────────────────────────────────
 app.post("/admin/start", (req, res) => {
   game.started = true;
   game.roundStartedAt = Date.now();
   startRound();
-  res.json({ ok: true, round: game.round });
+  res.json({ ok: true, round: game.state.round });
 });
-
-// POST /admin/npc → fill the open slot with a scripted NPC and start.
-app.post("/admin/npc", (req, res) => {
-  const slot = SLOT_IDS.find((id) => !game.growers[id].isHuman && !game.joinOrder.includes(id));
-  if (slot) game.growers[slot].name = `NPC ${slot}`;
-  game.started = true;
-  game.roundStartedAt = Date.now();
-  res.json({ ok: true, npc: slot ?? null });
-});
-
-// POST /admin/resolve → force the current round to resolve now.
 app.post("/admin/resolve", (req, res) => {
-  if (game.phase === "collecting") resolveAndAdvance();
-  res.json({ ok: true, round: game.round, phase: game.phase });
+  if (game.phase === "collecting" && game.started) resolveAndAdvance();
+  res.json({ ok: true, round: game.state.round, phase: game.phase });
 });
-
-// POST /admin/reset → clean slate between rehearsals.
+app.post("/admin/event", (req, res) => {
+  const ev = eventById(scenario, req.body?.id);
+  if (!ev) return res.status(404).json({ error: "unknown event id" });
+  const banner = applyEvent(game, ev);
+  res.json({ ok: true, banner, round: game.state.round });
+});
+app.post("/admin/shock", (req, res) => {
+  const banner = applyEvent(game, eventById(scenario, "frost"));
+  res.json({ ok: true, banner, round: game.state.round });
+});
 app.post("/admin/reset", (req, res) => {
   game = newGame();
   res.json({ ok: true });
 });
-
-// POST /admin/seed → fast-forward a fake 6-player cohort so the examiner has percentiles.
 app.post("/admin/seed", (req, res) => {
   game.seededCohort = seededCohort();
   res.json({ ok: true, players: game.seededCohort.length });
 });
-
-// GET /admin/state → full unfiltered state for the admin page.
 app.get("/admin/state", (req, res) => {
   res.json({
-    round: game.round, phase: game.phase, started: game.started, frostDone: game.frostDone,
-    growers: game.growers, market: game.market, banner: game.banner, joinOrder: game.joinOrder,
-    firedEvents: [...game.firedEvents], cascadeCount: game.cascade.length, seeded: Boolean(game.seededCohort),
+    round: game.state.round, phase: game.phase, started: game.started,
+    totalRounds: scenario.rounds,
+    seats: Object.values(game.state.players).map((p) => ({
+      id: p.id, role: p.role, name: p.name, isHuman: p.isHuman, cash: p.cash,
+      price: p.price, stock: Math.round(totalUnits(p.inventory)), goal: p.goal,
+      profit: p.profitCumulative, goalProgress: p.goalProgress,
+    })),
+    metrics: game.state.history.at(-1) ?? null,
+    joinOrder: game.joinOrder,
+    firedEvents: [...game.firedEvents],
+    seeded: Boolean(game.seededCohort),
     events: scenario.events.map((e) => ({ id: e.id, round: e.round, title: e.title, emoji: e.emoji })),
   });
 });
 
-// ── Cohort assembly (shared by /report and /professor) ────────────────────────
+// ── Grading: cohort assembly shared by /report and /professor ────────────────
 function buildCohort() {
+  const ids = Object.keys(game.state.players);
+  const impactSummary = summarizeImpact(game.ripples, ids);
   const realPlayers = game.joinOrder
-    .filter((sid) => game.growers[sid]?.isHuman)
-    .map((sid) => ({
-      studentId: sid,
-      name: game.growers[sid].name,
-      goal: game.growers[sid].goal,
-      goalProgress: game.growers[sid].goalProgress,
-      profit: game.growers[sid].cash - scenario.startCash,
-      decisionLog: game.decisionLog.filter((d) => d.studentId === sid),
-    }))
-    .filter((p) => p.decisionLog.length > 0);
-
+    .filter((sid) => game.state.players[sid]?.isHuman)
+    .map((sid) => {
+      const p = game.state.players[sid];
+      return {
+        studentId: sid, name: p.name, role: p.role, goal: p.goal,
+        goalProgress: p.goalProgress, profit: p.profitCumulative,
+        impact: impactSummary[sid],
+        decisionLog: game.decisionLog.filter((d) => d.studentId === sid),
+      };
+    })
+    .filter((s) => s.decisionLog.length > 0);
   const seeded = game.seededCohort ?? seededCohort();
   const cohort = [...realPlayers, ...seeded.filter((s) => !realPlayers.some((r) => r.studentId === s.studentId))];
-  const cascade = game.cascade.length ? game.cascade : sampleCascade;
-  return { cohort, cascade, realPlayers };
+  return { cohort, cascade: game.cascadeLog };
 }
 
-// GET /report/:studentId → grade the cohort (joined humans + seed) and return this student's model.
 app.get("/report/:studentId", async (req, res) => {
   const id = req.params.studentId;
-  const gr = game.growers[id];
-  if (!gr) return res.status(404).json({ error: "unknown student" });
-
+  if (!game.state.players[id]) return res.status(404).json({ error: "unknown player" });
   const { cohort, cascade } = buildCohort();
   try {
     const models = await gradeCohort(cohort, { cascade });
@@ -393,19 +373,24 @@ app.get("/report/:studentId", async (req, res) => {
   }
 });
 
-// GET /professor/data → whole-class grid: decision-quality rank, per-task ratings, profit, goal.
 app.get("/professor/data", async (req, res) => {
   const { cohort, cascade } = buildCohort();
   try {
     const models = await gradeCohort(cohort, { cascade });
-    const overrides = getOverrides();
-    res.json({ models, overrides, tasks: TASK_IDS, dimensions: DIMENSION_IDS, scenario: { events: scenario.events } });
+    res.json({
+      models,
+      overrides: getOverrides(),
+      tasks: TASK_IDS,
+      dimensions: DIMENSIONS,
+      history: game.state.history,
+      seats: Object.values(game.state.players).map((p) => ({ id: p.id, role: p.role, name: p.name, isHuman: p.isHuman })),
+      scenario: { events: scenario.events, tiers: slimScenario.tiers, goalLabels: GOAL_LABELS },
+    });
   } catch (err) {
     res.status(500).json({ error: `grading failed: ${err.message}` });
   }
 });
 
-// POST /professor/override {taskId, studentId, newScore, note} → professor disposes.
 app.post("/professor/override", async (req, res) => {
   const { taskId, studentId, newScore, note } = req.body ?? {};
   if (!taskId || !studentId) return res.status(400).json({ error: "taskId and studentId required" });
@@ -413,15 +398,12 @@ app.post("/professor/override", async (req, res) => {
   res.json({ ok: true, override: rec });
 });
 
-const TASK_IDS = ["free_play", "frost_response", "tax_response", "quality_choice", "cartel_reasoning"];
-const DIMENSION_IDS = ["equilibrium_reasoning", "strategic_anticipation", "information_updating", "risk_management"];
-
-// ── Static client (single origin → the client's relative fetches just work) ────
+// ── Static client ─────────────────────────────────────────────────────────────
 const clientDist = path.join(__dirname, "../client/dist");
 app.use(express.static(clientDist));
 app.get("*", (req, res) => res.sendFile(path.join(clientDist, "index.html")));
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[ripple] Lemonville world server on http://localhost:${PORT}`);
+  console.log(`[ripple] Lemonville ecosystem server on http://localhost:${PORT}`);
   console.log(`[ripple] players on the same wifi join at: ${shareUrl()}`);
 });

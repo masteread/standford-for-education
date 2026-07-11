@@ -1,7 +1,8 @@
-// B4 done-when: the seeded 6-player cohort produces plausible, DIFFERENT
-// scores per player, and the anchoring player (never reprices after frost)
-// gets flagged. Heuristic path runs offline; RIPPLE_LIVE_EXAMINER=1 also
-// grades one student live via Claude.
+// Examiner done-when (v4): the seeded 8-player, 4-tier cohort produces
+// plausible, DIFFERENT scores; the anchoring grocer (never reprices after
+// frost) is flagged; ecosystem-impact percentiles come from the engine numbers,
+// not the LLM. Heuristic path runs offline; RIPPLE_LIVE_EXAMINER=1 grades one
+// student live via Nebius.
 import "./loadenv.js";
 import { gradeCohort, gradeStudent, percentile } from "../server/agents/examiner.js";
 import { getSkillMemory } from "../server/evermind.js";
@@ -13,51 +14,43 @@ const check = (name, ok, extra = "") => {
   if (!ok) failures++;
 };
 
-// percentile math sanity
 check("percentile: max of set is 100", percentile(10, [2, 5, 10]) === 100);
 check("percentile: solo player is 50", percentile(7, [7]) === 50);
 
-// force the heuristic path for the cohort run (deterministic, free)
 process.env.RIPPLE_MOCK = "1";
 const cohort = seededCohort();
 const models = await gradeCohort(cohort, { cascade: sampleCascade });
 
 const ids = Object.keys(models);
-check("all 6 students graded", ids.length === 6, ids.join(","));
+check("all 8 students graded", ids.length === 8, ids.join(","));
+check("roles preserved on models", models.sF1.role === "farmer" && models.sG3.role === "grocer");
 
-const signatures = new Set(
-  ids.map((id) => Object.values(models[id].scores).map((d) => d.score).join("-"))
-);
+const signatures = new Set(ids.map((id) => Object.values(models[id].scores).map((d) => d.score).join("-")));
 check("scores differ across players", signatures.size >= 4, `${signatures.size} distinct score profiles`);
 
-const fred = models.F;
-const anchoringFlagged = (fred.detected_biases ?? []).some((b) => b.bias === "anchoring");
-check("anchoring player (F) flagged", anchoringFlagged, JSON.stringify(fred.detected_biases));
+const fred = models.sG3; // Frozen Fred
+check("anchoring player flagged", (fred.detected_biases ?? []).some((b) => b.bias === "anchoring"), JSON.stringify(fred.detected_biases));
 check(
-  "F scores lowest on information_updating",
+  "Fred scores lowest on information_updating",
   ids.every((id) => models[id].scores.information_updating.score >= fred.scores.information_updating.score)
 );
 
-// Heuristic grader ties the five reactive players, so assert spread + Fred at
-// the bottom rather than an absolute ceiling (live grading spreads wider).
-const percentiles = ids.map((id) => models[id].percentiles.information_updating);
+// impact comes from engine numbers on the student record, never the LLM
+check("impact attached from engine", models.sW1.impact.welfareDelta === 48 && models.sG2.impact.welfareDelta === -55);
 check(
-  "percentiles separate Fred from the cohort",
-  models.F.percentiles.information_updating < 30 && Math.max(...percentiles) - Math.min(...percentiles) >= 40,
-  percentiles.join(",")
+  "impact percentiles rank Cai above Eve",
+  models.sW1.impactPercentile > models.sG2.impactPercentile,
+  `Cai ${models.sW1.impactPercentile} vs Eve ${models.sG2.impactPercentile}`
 );
 
-// EverOS mirror (in-memory fallback without a key)
-const remembered = await getSkillMemory("F");
-check("skill model mirrored to EverOS memory (or fallback)", remembered?.scores?.information_updating != null);
+const remembered = await getSkillMemory("Frozen Fred");
+check("skill model mirrored to EverOS memory (by name)", remembered?.scores?.information_updating != null);
 
-// optional live grading of one student
 delete process.env.RIPPLE_MOCK;
 if (process.env.NEBIUS_API_KEY && process.env.RIPPLE_LIVE_EXAMINER === "1") {
   const live = await gradeStudent({ ...cohort[5], cascade: sampleCascade });
   check("live: examiner returns 4 scored dimensions", Object.keys(live.scores).length === 4, `source=${live.source}`);
-  const liveAnchor = (live.detected_biases ?? []).some((b) => /anchor/i.test(b.bias));
-  check("live: examiner flags anchoring on Frozen Fred", liveAnchor, JSON.stringify(live.detected_biases));
+  check("live: examiner flags anchoring on Frozen Fred", (live.detected_biases ?? []).some((b) => /anchor/i.test(b.bias)), JSON.stringify(live.detected_biases));
 } else {
   console.log("SKIP: live examiner (set RIPPLE_LIVE_EXAMINER=1 to run)");
 }

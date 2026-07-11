@@ -1,44 +1,79 @@
-// B3/B6 — Orchestrator: assigns role + goal on join.
-// v0: round-robin role, goal from the pool (asymmetric by construction with 2 players).
-// v1 (EverOS): if a prior skill model exists for this student, cast against
-// their historically weakest dimension — explainable in one line. Falls back
-// to v0 cleanly when memory is absent or unreachable.
+// Orchestrator: casts a joining student into the ecosystem — which SEAT (role in
+// the chain) and which GOAL (motivation, never the grade).
+// Seats interleave across tiers so the first four humans span four different
+// roles (the butterfly demo needs the chain covered). Goals rotate through the
+// role's pool; with EverOS memory, the goal is chosen against the student's
+// historically weakest dimension instead.
 
 import { getSkillMemory } from "../evermind.js";
 
-export const GOAL_POOL = [
-  "max_profit",
-  "max_market_share",
-  "survive_shock_cash_80",
-  "zero_spoilage",
-];
+// First humans spread across the chain, then fill the remaining seats.
+export const SEAT_ORDER = ["F1", "G1", "W1", "R1", "F2", "G2", "R2", "F3", "G3", "W2", "R3"];
 
 export const GOAL_LABELS = {
-  max_profit: "Maximize total profit over 12 rounds.",
-  max_market_share: "Capture at least 60% market share — profit is secondary.",
-  survive_shock_cash_80: "Survive the mid-game shock with cash above $80.",
-  zero_spoilage: "End the game with zero spoiled crates.",
+  max_profit: "Make the most PROFIT over 12 rounds.",
+  market_share: "Capture the BIGGEST share of your tier's market.",
+  survive_frost: "Survive the frost with cash above $60.",
+  zero_spoilage: "End with (almost) ZERO spoiled crates.",
+  volume_mover: "Move 100+ crates through your depot.",
+  perfect_fill: "Fill 90%+ of the orders that reach you.",
+  clean_reputation: "Never get caught selling a bad lemon.",
+  serve_meals: "Serve 60+ meals at your café.",
 };
 
-// Weakest dimension -> the casting that trains it.
-const CASTING_BY_WEAKNESS = {
-  strategic_anticipation: {
-    goal: "max_market_share",
-    reason: "low strategic_anticipation → tight duopoly vs a market-share rival",
-  },
-  equilibrium_reasoning: {
-    goal: "max_profit",
-    reason: "low equilibrium_reasoning → pure profit goal forces pricing toward market-clearing",
-  },
-  information_updating: {
-    goal: "survive_shock_cash_80",
-    reason: "low information_updating → shock-survival goal rewards reacting to news",
-  },
-  risk_management: {
-    goal: "zero_spoilage",
-    reason: "low risk_management → spoilage goal forces inventory discipline",
-  },
+const ROLE_BLURB = {
+  farmer: ["You grow lemons at $2/crate and set the farm-gate price.", "Depots buy from whichever farm is cheapest (with some loyalty).", "Each round: set your price and how many crates to grow."],
+  wholesaler: ["You buy crates from farms and resell them to grocers & cafés.", "Your margin is the spread; your risk is stock that ages in the depot.", "Each round: set your ask price and how much to order from farms."],
+  grocer: ["You stock lemons from the depots and retail them to townsfolk.", "24 townsfolk compare your price to their budget — and to your rivals.", "Each round: set your shelf price and how much to order."],
+  restaurant: ["You buy crates (1 crate = 4 meals, +$1 prep) and sell meals.", "Diners come if your menu price clears what they're willing to pay.", "Each round: set your meal price and how many crates to order."],
 };
+
+// Weakest dimension → the goal (within the assigned role's pool) that trains it.
+const GOAL_BY_WEAKNESS = {
+  equilibrium_reasoning: "max_profit",
+  strategic_anticipation: "market_share",
+  information_updating: "survive_frost",
+  risk_management: "zero_spoilage",
+};
+
+/**
+ * Cast a joining student. `takenSeats` = ids already held by humans;
+ * `index` = join order (drives goal rotation). Returns null seat if town full.
+ */
+export async function castStudent({ name, index, takenSeats, game }) {
+  const seatId = SEAT_ORDER.find((id) => !takenSeats.includes(id));
+  if (!seatId) return null;
+  const role = game.state.players[seatId].role;
+  const pool = game.scenario.goals[role];
+
+  let goal = pool[index % pool.length];
+  let castingReason = "v0: seats interleave across the chain; goal rotates through the role pool";
+
+  const prior = await getSkillMemory(name).catch(() => null);
+  const worst = weakestDimension(prior);
+  if (worst) {
+    const trained = GOAL_BY_WEAKNESS[worst.dim];
+    if (trained && pool.includes(trained)) {
+      goal = trained;
+      castingReason = `memory: weakest dimension is ${worst.dim} (${worst.score}/10 last session) → goal that trains it`;
+    }
+  }
+
+  const tier = game.scenario.tiers.find((t) => t.role === role);
+  return {
+    studentId: seatId,
+    role,
+    goal,
+    castingReason,
+    roleCard: {
+      title: `${tier.emoji} ${tier.label} ${seatId} — ${name}`,
+      role,
+      lines: ROLE_BLURB[role],
+      goal,
+      goalText: GOAL_LABELS[goal] ?? goal,
+    },
+  };
+}
 
 function weakestDimension(model) {
   const scores = model?.scores;
@@ -46,48 +81,7 @@ function weakestDimension(model) {
   let worst = null;
   for (const [dim, detail] of Object.entries(scores)) {
     const score = Number(detail?.score);
-    if (!Number.isFinite(score)) continue;
-    if (!worst || score < worst.score) worst = { dim, score };
+    if (Number.isFinite(score) && (!worst || score < worst.score)) worst = { dim, score };
   }
   return worst;
-}
-
-/**
- * Decide studentId, goal, and role card for a joining player.
- * `index` is the join order (0-based) — drives round-robin role + v0 goals.
- */
-export async function castStudent({ name, index }) {
-  const studentId = String.fromCharCode(65 + (index % 26)); // A, B, C...
-
-  let goal = GOAL_POOL[index % GOAL_POOL.length];
-  let castingReason = "v0: round-robin role + rotating goal (no prior skill memory)";
-
-  const prior = await getSkillMemory(studentId).catch(() => null);
-  const worst = weakestDimension(prior);
-  if (worst && CASTING_BY_WEAKNESS[worst.dim]) {
-    goal = CASTING_BY_WEAKNESS[worst.dim].goal;
-    castingReason = `memory: ${CASTING_BY_WEAKNESS[worst.dim].reason} (scored ${worst.score}/10 last session)`;
-  }
-
-  return {
-    studentId,
-    name,
-    goal,
-    castingReason,
-    roleCard: roleCard({ studentId, name, goal }),
-  };
-}
-
-/** The 3-line role card shown on join (goal in large type on the client). */
-export function roleCard({ studentId, name, goal }) {
-  return {
-    title: `Grower ${studentId} — ${name}`,
-    lines: [
-      "You grow lemons. Cost: $2/crate. Start: $100 cash, 20 crates.",
-      "Lemons spoil after 3 rounds. Your rival is the other grower.",
-      "Each round: set a price and how many crates to produce.",
-    ],
-    goal,
-    goalText: GOAL_LABELS[goal] ?? goal,
-  };
 }
