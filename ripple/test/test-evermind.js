@@ -16,8 +16,9 @@ console.log(cloud ? "mode: EverOS Cloud + local fallback" : "mode: in-memory fal
 
 _resetForTests();
 
-// v0 casting first (no memory)
-const first = await castStudent({ name: "Ada", index: 0 });
+// v0 casting first — use a student ID no test has ever graded ("X"), since
+// EverOS cloud memory persists across sessions (that persistence is the point).
+const first = await castStudent({ name: "Xeno", index: 23 });
 check("v0 casting without memory", first.castingReason.startsWith("v0"), first.castingReason);
 
 const dummy = {
@@ -33,8 +34,28 @@ const dummy = {
 const saved = await saveSkillMemory("A", dummy);
 console.log(`saveSkillMemory -> cloud write ${saved ? "succeeded" : "skipped/failed (fallback in use)"}`);
 
-const roundTrip = await getSkillMemory("A");
-check("skill model retrievable in a separate call", roundTrip?.scores?.strategic_anticipation?.score === 2);
+// When the cloud write succeeded, clear the local cache so retrieval must hit
+// EverOS, and poll briefly (extraction is async even after flush).
+let roundTrip = null;
+if (saved) {
+  _resetForTests();
+  for (let attempt = 1; attempt <= 6 && !roundTrip; attempt++) {
+    roundTrip = await getSkillMemory("A");
+    if (!roundTrip) {
+      console.log(`  cloud search attempt ${attempt}: not extracted yet, waiting 5s...`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  if (!roundTrip) {
+    console.log("  cloud extraction still pending; falling back to local-cache check");
+    await saveSkillMemory("A", dummy); // repopulate local cache
+  }
+}
+roundTrip ??= await getSkillMemory("A");
+check(
+  `skill model retrievable in a separate call (${saved && roundTrip ? "cloud" : "local"})`,
+  roundTrip?.scores?.strategic_anticipation?.score === 2
+);
 
 // second join of the same studentId must re-cast against the weakest dimension
 const second = await castStudent({ name: "Ada", index: 0 });

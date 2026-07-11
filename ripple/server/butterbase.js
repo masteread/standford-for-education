@@ -52,7 +52,17 @@ export async function saveState(round, tickState) {
 /** Append one DecisionLogEntry (see shared/contracts.md). */
 export async function appendDecision(entry) {
   mem.decision_logs.push(entry);
-  await bestEffort(remote("POST", "decision_logs", entry), "appendDecision");
+  // Butterbase columns are snake_case; contracts stay camelCase in app code.
+  await bestEffort(
+    remote("POST", "decision_logs", {
+      round: entry.round,
+      student_id: entry.studentId,
+      intent: entry.intent,
+      action: entry.action,
+      visible_state: entry.visibleState,
+    }),
+    "appendDecision"
+  );
 }
 
 /** Persist a student's graded skill model; also updates the local leaderboard. */
@@ -67,20 +77,34 @@ export async function saveSkillModel(studentId, model) {
     name: model?.name ?? studentId,
     decisionQuality: Number(avg.toFixed(2)),
   });
-  await bestEffort(remote("POST", "skill_models", { studentId, model }), "saveSkillModel");
-  await bestEffort(
-    remote("POST", "leaderboard", mem.leaderboard.get(studentId)),
-    "saveSkillModel(leaderboard)"
-  );
+  await bestEffort(remote("POST", "skill_models", { student_id: studentId, model }), "saveSkillModel");
+  await bestEffort(upsertLeaderboard(mem.leaderboard.get(studentId)), "saveSkillModel(leaderboard)");
+}
+
+// leaderboard.student_id is UNIQUE — PATCH the existing row on regrade.
+async function upsertLeaderboard(entry) {
+  const row = { student_id: entry.studentId, name: entry.name, decision_quality: entry.decisionQuality };
+  const existing = await remote("GET", "leaderboard", undefined, `?student_id=eq.${entry.studentId}`);
+  const rows = existing?.rows ?? existing?.data ?? existing;
+  const hit = Array.isArray(rows) ? rows[0] : null;
+  if (hit?.id) return remote("PATCH", `leaderboard/${hit.id}`, row);
+  return remote("POST", "leaderboard", row);
 }
 
 /** Shared leaderboard, best decision quality first. Remote if reachable, else local. */
 export async function getLeaderboard() {
-  const rows = await bestEffort(
-    remote("GET", "leaderboard", undefined, "?order=decisionQuality.desc"),
+  const result = await bestEffort(
+    remote("GET", "leaderboard", undefined, "?order=decision_quality.desc"),
     "getLeaderboard"
   );
-  if (Array.isArray(rows) && rows.length > 0) return rows;
+  const rows = result?.rows ?? result?.data ?? result;
+  if (Array.isArray(rows) && rows.length > 0) {
+    return rows.map((r) => ({
+      studentId: r.student_id,
+      name: r.name,
+      decisionQuality: r.decision_quality,
+    }));
+  }
   return [...mem.leaderboard.values()].sort((a, b) => b.decisionQuality - a.decisionQuality);
 }
 

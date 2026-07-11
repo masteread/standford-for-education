@@ -44,6 +44,7 @@ export async function saveSkillMemory(studentId, skillModel) {
       messages: [
         {
           role: "user",
+          timestamp: Date.now(), // required (Unix ms) per llms-full.txt
           content:
             `Graded skill model for economics student ${studentId} from a Ripple market ` +
             `simulation session. ${MARKER}${JSON.stringify(skillModel)}`,
@@ -80,6 +81,26 @@ function extractModelFromText(text) {
   return null;
 }
 
+/** Walk any JSON value and return the first embedded skill model found. */
+function deepFindModel(node, depth = 0) {
+  if (depth > 8 || node == null) return null;
+  if (typeof node === "string") return extractModelFromText(node);
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = deepFindModel(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof node === "object") {
+    for (const value of Object.values(node)) {
+      const found = deepFindModel(value, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 /**
  * Retrieve a student's prior skill model. Cloud search first, local cache
  * as fallback. Returns null on miss — callers must handle null (v0 casting).
@@ -90,18 +111,16 @@ export async function getSkillMemory(studentId) {
       query: "graded skill model scores for market simulation",
       filters: { user_id: String(studentId) },
       method: "hybrid",
-      top_k: 5,
+      // raw_message keeps the verbatim MARKER JSON; episodic narratives may paraphrase it
+      memory_types: ["episodic_memory", "raw_message", "agent_memory"],
+      include_original_data: true,
+      top_k: 10,
     });
-    const episodes = result?.episodes ?? [];
-    for (const ep of episodes) {
-      const model =
-        extractModelFromText(ep?.episode) ??
-        extractModelFromText(ep?.summary) ??
-        (ep?.atomic_facts ?? []).map(extractModelFromText).find(Boolean);
-      if (model) {
-        localMemory.set(studentId, model);
-        return model;
-      }
+    // Response is wrapped in {data: {...}}; scan every string in it for the marker.
+    const model = deepFindModel(result?.data ?? result);
+    if (model) {
+      localMemory.set(studentId, model);
+      return model;
     }
   } catch (err) {
     console.warn(`[evermind] getSkillMemory(${studentId}) failed (trying local): ${err.message}`);
