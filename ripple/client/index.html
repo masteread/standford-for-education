@@ -72,6 +72,22 @@
       @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
       .flip { animation: flip .5s steps(2) both; }
       @keyframes flip { 0% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+      /* town-scene ambience — all CSS, all steppy so it reads 8-bit */
+      .step { animation: step .5s steps(2) infinite; }
+      @keyframes step { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-4px); } }
+      .drift { animation: drift 26s linear infinite; }
+      @keyframes drift { from { transform: translateX(-140px); } to { transform: translateX(120vw); } }
+      .drift2 { animation: drift 38s linear infinite; }
+      .patrol { animation: patrol 9s steps(18) infinite alternate; }
+      @keyframes patrol { from { left: 8%; } to { left: 78%; } }
+      .fly { animation: fly 14s linear infinite; }
+      @keyframes fly { from { transform: translate(-40px,0); } to { transform: translate(96vw,-24px); } }
+      .sway { animation: sway 2.4s steps(2) infinite; transform-origin: bottom center; }
+      @keyframes sway { 0%,100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+      .sun { animation: sun 3s steps(2) infinite; }
+      @keyframes sun { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+      .coin { animation: coin .9s steps(6) forwards; }
+      @keyframes coin { 0% { opacity: 0; transform: translate(-50%, 0) scale(.4); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -22px) scale(1); } }
     </style>
   </head>
   <body>

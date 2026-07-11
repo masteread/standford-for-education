@@ -1,25 +1,32 @@
-// The town square — demo centerpiece. Two lemon stalls and 20 townsfolk emoji
-// who WALK (CSS transition) to the stall they buy from after each round. The
-// crowd distribution mirrors the engine's demand split exactly: the crowd IS
-// the demand curve, visualized. Priced-out folk wander to the edge with 😤.
+// The town of Lemonville — an animated pixel scene, the demo centerpiece.
+// A market square with a sky (drifting clouds, sun, birds), a skyline of houses,
+// a cobblestone street, two market stalls with striped awnings + flipping price
+// signs, a patrolling dog, and 20 townsfolk who WALK to the stall they buy from
+// after each round — the crowd distribution mirrors the engine's demand split
+// exactly (the crowd IS the demand curve). Priced-out folk trudge off with 💸.
+// All CSS/emoji, no sprite sheets.
 import { P, BORDER, SHADOW, pixFont, bodyFont, Tag } from "./pixel.js";
 
-const FOLK = ["🧑‍🌾", "👵", "🧒", "👨‍🍳", "🧓", "👩‍🦰", "🧔", "👦", "👩", "🧑"];
+const FOLK = ["🧑‍🌾", "👵", "🧒", "👨‍🍳", "🧓", "👩‍🦰", "🧔", "👦", "👩", "🧑", "👴", "👧", "🧑‍🦱", "👨‍🦰", "👩‍🌾"];
+const HOUSES = ["🏠", "🏪", "🏛️", "🏫", "🏬", "🏘️", "⛪", "🏦"];
 
-// Lay `n` members in centered rows of up to `perRow`, around a center x (%).
-function layout(indices, centerX, topBase) {
-  const perRow = 5;
+// Place `indices` around a center x (%), alternating two depth rows.
+function place(indices, centerX, tops) {
+  const n = Math.ceil(indices.length / 2);
   return indices.map((idx, k) => {
-    const row = Math.floor(k / perRow);
-    const inRow = Math.min(perRow, indices.length - row * perRow);
-    const col = k % perRow;
-    const spread = 9; // % per person
-    const left = centerX + (col - (inRow - 1) / 2) * spread;
-    return { idx, left, top: topBase + row * 34 };
+    const row = k % 2;
+    const col = Math.floor(k / 2);
+    return {
+      idx,
+      left: centerX + (col - (n - 1) / 2) * 8.5,
+      top: row === 0 ? tops[0] : tops[1],
+      scale: row === 0 ? 0.85 : 1.12,
+      z: row === 0 ? 2 : 3,
+    };
   });
 }
 
-/** Assign 20 townsfolk to {A, B, off} based on sold + demand. */
+/** Assign 20 townsfolk to {A, B, off, idle} based on sold + demand. */
 function assign(state, ids) {
   const g = {};
   for (const gr of state.growers) g[gr.id] = gr;
@@ -28,10 +35,7 @@ function assign(state, ids) {
   const soldB = g[b]?.sold ?? 0;
   const total = soldA + soldB;
   const N = state.townsfolk ?? 20;
-
   if (total === 0) return { A: [], B: [], off: [], idle: [...Array(N).keys()] };
-
-  // Participation scales with total demand → high prices leave more folk priced out.
   const active = Math.max(0, Math.min(N, Math.round((N * (state.market.totalDemand ?? total)) / 100)));
   const nA = Math.round((active * soldA) / total);
   const nB = Math.max(0, active - nA);
@@ -43,37 +47,63 @@ function assign(state, ids) {
   return out;
 }
 
-// Speech bubbles derived from the latest round's cascade entries.
 function bubbles(state, ids) {
   const cascade = state.cascade ?? [];
   if (!cascade.length) return [];
   const last = Math.max(...cascade.map((c) => c.round));
   const kinds = new Set(cascade.filter((c) => c.round === last).map((c) => c.kind));
-  const out = [];
   const g = {};
   for (const gr of state.growers) g[gr.id] = gr;
-  const cheaper = (g[ids[0]]?.price ?? 0) <= (g[ids[1]]?.price ?? 0) ? ids[0] : ids[1];
-  if (kinds.has("switch")) out.push({ side: cheaper, text: "Cheaper over here!" });
+  const cheaper = (g[ids[0]]?.price ?? 0) <= (g[ids[1]]?.price ?? 0) ? "A" : "B";
+  const out = [];
+  if (kinds.has("switch")) out.push({ side: cheaper, text: "Cheaper here!" });
   if (kinds.has("sellout")) out.push({ side: cheaper, text: "Sold out! 😮" });
   if (kinds.has("quality")) out.push({ side: "off", text: "Bad lemons! 🤢" });
-  if (kinds.has("tax")) out.push({ side: "off", text: "Prices went up 😕" });
-  if (kinds.has("elasticity")) out.push({ side: "off", text: "Too pricey! 😤" });
+  if (kinds.has("tax")) out.push({ side: "off", text: "Pricey now 😕" });
+  if (kinds.has("elasticity")) out.push({ side: "off", text: "Too dear! 😤" });
   return out.slice(0, 3);
 }
 
-function Stall({ gr, mine }) {
+function Stall({ gr, mine, x }) {
+  const stripeA = mine ? P.lemon : P.green;
   return (
-    <div style={{ textAlign: "center", width: 120 }}>
-      <div style={{ fontSize: 40, lineHeight: 1 }} className="bob">🍋</div>
-      <div style={{ background: mine ? P.lemon : P.white, border: BORDER, boxShadow: SHADOW, padding: "4px 2px", marginTop: 2 }}>
-        <div style={{ fontFamily: pixFont, fontSize: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {mine ? "YOU" : gr.name}
-        </div>
-        {/* price sign flips when the price changes (key remounts → .flip plays) */}
-        <div key={gr.price} className="flip" style={{ fontFamily: pixFont, fontSize: 14, marginTop: 3 }}>
-          ${gr.price}
-        </div>
+    <div style={{ position: "absolute", left: `${x}%`, top: "34%", transform: "translateX(-50%)", width: 132, textAlign: "center", zIndex: 2 }}>
+      {/* hanging price sign — flips when the price changes */}
+      <div style={{ width: 2, height: 8, background: P.ink, margin: "0 auto" }} />
+      <div key={gr.price} className="flip" style={{ display: "inline-block", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "3px 8px", fontFamily: pixFont, fontSize: 13, marginBottom: 2 }}>
+        ${gr.price}
       </div>
+      {/* striped awning */}
+      <div style={{ height: 16, border: BORDER, borderBottom: "none", background: `repeating-linear-gradient(90deg, ${stripeA} 0 12px, ${P.white} 12px 24px)` }} />
+      {/* counter (wood) with a lemon pile + keeper */}
+      <div style={{ border: BORDER, background: "#C9A227", padding: "4px 0 6px", position: "relative" }}>
+        <div style={{ position: "absolute", top: -22, left: 8, fontSize: 22 }} className="bob">{mine ? "🧑‍🌾" : "🧔"}</div>
+        <div style={{ fontSize: 20, letterSpacing: -6 }}>🍋🍋🍋</div>
+      </div>
+      {/* name plate */}
+      <div style={{ background: mine ? P.lemon : P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, fontFamily: pixFont, fontSize: 8, padding: "3px 2px", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {mine ? "YOUR STAND" : gr.name}
+      </div>
+    </div>
+  );
+}
+
+function Person({ p, emoji, round, sad, buying }) {
+  return (
+    <div className="walk" style={{ position: "absolute", left: `${p.left}%`, top: `${p.top}%`, transform: "translateX(-50%)", zIndex: p.z }}>
+      {buying && <span key={round} className="coin" style={{ position: "absolute", left: "50%", top: -14, fontSize: 13 }}>🪙</span>}
+      <span className="step" style={{ display: "inline-block", fontSize: 30 * p.scale, filter: sad ? "grayscale(1)" : "none", opacity: sad ? 0.55 : 1 }}>
+        {emoji}
+      </span>
+      {sad && <span style={{ position: "absolute", left: "60%", top: -6, fontSize: 13 }}>💸</span>}
+    </div>
+  );
+}
+
+function Bubble({ x, y, text }) {
+  return (
+    <div className="pop" style={{ position: "absolute", left: `${x}%`, top: `${y}%`, transform: "translateX(-50%)", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "3px 6px", fontFamily: bodyFont, fontSize: 15, whiteSpace: "nowrap", zIndex: 7 }}>
+      {text}
     </div>
   );
 }
@@ -84,76 +114,70 @@ export default function Town({ state, studentId }) {
   const b = state.growers.find((g) => g.id === ids[1]);
   const groups = assign(state, ids);
   const speech = bubbles(state, ids);
+  const round = state.round;
 
-  // Position lookup for all townsfolk.
   const pos = {};
-  layout(groups.A, 25, 96).forEach((p) => (pos[p.idx] = { ...p, faded: false }));
-  layout(groups.B, 75, 96).forEach((p) => (pos[p.idx] = { ...p, faded: false }));
-  layout(groups.off, 50, 176).forEach((p) => (pos[p.idx] = { ...p, faded: true, sad: true }));
-  layout(groups.idle, 50, 130).forEach((p) => (pos[p.idx] = { ...p, faded: false }));
+  place(groups.A, 25, [64, 80]).forEach((p) => (pos[p.idx] = { ...p, buying: true }));
+  place(groups.B, 75, [64, 80]).forEach((p) => (pos[p.idx] = { ...p, buying: true }));
+  place(groups.off, 92, [70, 86]).forEach((p, i) => (pos[p.idx] = { ...p, left: i % 2 ? 96 : 5, sad: true }));
+  place(groups.idle, 50, [66, 82]).forEach((p) => (pos[p.idx] = { ...p }));
+
+  const bubbleAt = { A: { x: 25, y: 25 }, B: { x: 75, y: 25 }, off: { x: 50, y: 63 } };
 
   return (
-    <div style={{ border: BORDER, boxShadow: SHADOW, background: P.skySoft, padding: 12, marginBottom: 14 }}>
-      {/* Stalls */}
-      <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end" }}>
-        <div style={{ position: "relative" }}>
-          {speech.filter((s) => s.side === ids[0]).map((s, i) => <Bubble key={i} text={s.text} />)}
-          <Stall gr={a} mine={a.id === studentId} />
-        </div>
-        <div style={{ position: "relative" }}>
-          {speech.filter((s) => s.side === ids[1]).map((s, i) => <Bubble key={i} text={s.text} />)}
-          <Stall gr={b} mine={b.id === studentId} />
-        </div>
-      </div>
+    <div style={{ marginBottom: 14 }}>
+      <div
+        style={{
+          position: "relative", border: BORDER, boxShadow: SHADOW, overflow: "hidden",
+          height: "min(58vw, 430px)", minHeight: 360,
+          background: "linear-gradient(#BFE3FF 0%, #DFF1FF 44%, #CDE8A6 44%, #CDE8A6 58%, #B8AE93 58%, #A89E82 100%)",
+        }}
+      >
+        {/* sky ambience */}
+        <span className="sun" style={{ position: "absolute", top: 10, right: 16, fontSize: 34, zIndex: 1 }}>☀️</span>
+        <span className="drift" style={{ position: "absolute", top: 22, fontSize: 28, zIndex: 1 }}>☁️</span>
+        <span className="drift2" style={{ position: "absolute", top: 60, fontSize: 22, zIndex: 1 }}>☁️</span>
+        <span className="fly" style={{ position: "absolute", top: 40, fontSize: 16, zIndex: 1 }}>🐦</span>
 
-      {/* Plaza with walking townsfolk */}
-      <div style={{ position: "relative", height: 230, marginTop: 6 }}>
-        {speech.filter((s) => s.side === "off").map((s, i) => (
-          <div key={`ob${i}`} style={{ position: "absolute", left: "50%", top: 150, transform: "translateX(-50%)" }}>
-            <Bubble text={s.text} />
-          </div>
-        ))}
+        {/* skyline of houses along the horizon */}
+        <div style={{ position: "absolute", top: "30%", left: 0, right: 0, display: "flex", justifyContent: "space-around", alignItems: "flex-end", zIndex: 1, opacity: 0.95 }}>
+          {HOUSES.map((h, i) => <span key={i} style={{ fontSize: 30 + (i % 3) * 6 }}>{h}</span>)}
+        </div>
+
+        {/* trees flanking the square */}
+        <span className="sway" style={{ position: "absolute", left: 6, top: "50%", fontSize: 34, zIndex: 2 }}>🌳</span>
+        <span className="sway" style={{ position: "absolute", right: 6, top: "50%", fontSize: 34, zIndex: 2 }}>🌳</span>
+
+        {/* the two market stalls */}
+        <Stall gr={a} mine={a.id === studentId} x={25} />
+        <Stall gr={b} mine={b.id === studentId} x={75} />
+
+        {/* patrolling dog */}
+        <span className="patrol" style={{ position: "absolute", top: "90%", fontSize: 22, zIndex: 3 }}>🐕</span>
+
+        {/* townsfolk */}
         {[...Array(state.townsfolk ?? 20).keys()].map((i) => {
-          const p = pos[i] ?? { left: 50, top: 130, faded: true };
-          return (
-            <div
-              key={i}
-              className="walk"
-              style={{
-                position: "absolute", left: `${p.left}%`, top: p.top, transform: "translateX(-50%)",
-                fontSize: 26, opacity: p.faded ? 0.4 : 1, filter: p.faded ? "grayscale(1)" : "none",
-              }}
-            >
-              {FOLK[i % FOLK.length]}
-              {p.sad && <span style={{ fontSize: 14 }}>💸</span>}
-            </div>
-          );
+          const p = pos[i] ?? { left: 50, top: 84, scale: 1, z: 3, sad: true };
+          return <Person key={i} p={p} emoji={FOLK[i % FOLK.length]} round={round} sad={p.sad} buying={p.buying} />;
         })}
-        {/* ground line */}
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, borderTop: `4px dashed ${P.ink}44` }} />
+
+        {/* speech bubbles */}
+        {speech.map((s, i) => <Bubble key={i} x={bubbleAt[s.side].x} y={bubbleAt[s.side].y} text={s.text} />)}
+
+        {/* idle hint */}
+        {groups.idle.length > 0 && (
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "6px 10px", fontFamily: pixFont, fontSize: 9, zIndex: 6 }}>
+            Market opens — set your price! 🍋
+          </div>
+        )}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <Tag bg={P.white}>Demand {state.market.totalDemand ?? "—"}</Tag>
         <Tag bg={P.white}>Avg ${state.market.avgPrice ?? "—"}</Tag>
-        <Tag bg={P.lemonSoft}>🍋 {a.name} sold {a.sold}</Tag>
-        <Tag bg={P.greenSoft}>🍋 {b.name} sold {b.sold}</Tag>
+        <Tag bg={P.lemon}>{a.id === studentId ? "You" : a.name} sold {a.sold}</Tag>
+        <Tag bg={P.green}>{b.id === studentId ? "You" : b.name} sold {b.sold}</Tag>
       </div>
-    </div>
-  );
-}
-
-function Bubble({ text }) {
-  return (
-    <div
-      className="pop"
-      style={{
-        position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%)", marginBottom: 4,
-        background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "4px 6px",
-        fontFamily: bodyFont, fontSize: 15, whiteSpace: "nowrap", zIndex: 5,
-      }}
-    >
-      {text}
     </div>
   );
 }
