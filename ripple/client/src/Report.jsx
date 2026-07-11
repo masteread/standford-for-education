@@ -45,7 +45,7 @@ function Radar({ model }) {
   });
   const poly = (sel) => pts.map((p) => `${sel(p).x.toFixed(1)},${sel(p).y.toFixed(1)}`).join(" ");
   return (
-    <svg width="100%" viewBox={`0 0 ${size} ${size}`} style={{ display: "block", margin: "0 auto", maxWidth: 300 }}>
+    <svg width="100%" viewBox={`-30 -6 ${size + 60} ${size + 12}`} style={{ display: "block", margin: "0 auto", maxWidth: 320 }}>
       {[0.33, 0.66, 1].map((r) => (
         <polygon key={r} points={pts.map((p) => `${c + Math.cos(p.ang) * R * r},${c + Math.sin(p.ang) * R * r}`).join(" ")}
           fill="none" stroke={P.ink} strokeOpacity="0.18" strokeWidth="2" />
