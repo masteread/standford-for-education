@@ -1,5 +1,6 @@
-// Bottom-of-screen helper panel, two tabs only (offers surface as a big card in
+// The student's single action card, three tabs (offers surface as a big card in
 // Game.jsx, never buried here):
+//  🎯 My move  : the hero move panel (steppers + CONFIRM), passed in from Game.jsx
 //  🗣 Helper   : type strategy in plain English; the AI helper fills in your move
 //  📯 Town News: what happened each round, newest first, your items highlighted
 import { useEffect, useRef, useState } from "react";
@@ -11,19 +12,22 @@ const KIND_COLOR = {
 };
 const involvesMe = (e, id) => e.affected === id || e.source === id;
 
-export default function ChatPanel({ state, studentId, onReplayRound, onPropose }) {
-  const [tab, setTab] = useState("delegate");
+export default function ChatPanel({ state, studentId, onReplayRound, onPropose, movePanel, moveDone }) {
+  const [tab, setTab] = useState("move");
+  const tabs = [["move", moveDone ? "✅ My move" : "🎯 My move"], ["delegate", "🗣 Helper"], ["crier", "📯 Town news"]];
+  // when the helper fills in a move, jump the student straight to the CONFIRM button
+  const propose = (a) => { onPropose?.(a); setTab("move"); };
   return (
-    <div style={{ border: BORDER, boxShadow: SHADOW, background: P.white, display: "flex", flexDirection: "column", minHeight: 320, maxHeight: 420 }}>
+    <div style={{ border: BORDER, boxShadow: SHADOW, background: P.white, display: "flex", flexDirection: "column", marginBottom: 14, ...(tab === "move" ? {} : { minHeight: 320, maxHeight: 420 }) }}>
       <div style={{ display: "flex", borderBottom: BORDER }}>
-        {[["delegate", "🗣 Helper"], ["crier", "📯 Town news"]].map(([id, label]) => (
+        {tabs.map(([id, label], i) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             style={{
-              flex: 1, fontFamily: pixFont, fontSize: 9, padding: "10px 4px", border: "none", borderRadius: 0,
+              flex: 1, fontFamily: pixFont, fontSize: 8, padding: "10px 2px", border: "none", borderRadius: 0,
               boxShadow: "none", background: tab === id ? P.lemon : P.white,
-              borderRight: id === "delegate" ? BORDER : "none",
+              borderRight: i < tabs.length - 1 ? BORDER : "none",
             }}
           >
             {label}
@@ -31,7 +35,8 @@ export default function ChatPanel({ state, studentId, onReplayRound, onPropose }
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
-        {tab === "delegate" && <Delegate state={state} studentId={studentId} onPropose={onPropose} />}
+        {tab === "move" && movePanel}
+        {tab === "delegate" && <Delegate state={state} studentId={studentId} onPropose={propose} />}
         {tab === "crier" && <Crier state={state} studentId={studentId} onReplayRound={onReplayRound} />}
       </div>
     </div>

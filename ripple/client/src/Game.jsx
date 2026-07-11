@@ -88,7 +88,7 @@ function OfferCard({ state, studentId }) {
   );
 }
 
-/** THE hero: set two numbers, press one button. */
+/** THE hero: set two numbers, press one button. Lives inside the tabbed card. */
 function MovePanel({ state, self, pending, setPending, confirmed, setConfirmed }) {
   const tier = (state.scenario?.tiers ?? []).find((t) => t.role === self.role) ?? { priceBounds: { min: 1, max: 25 }, qtyBounds: { min: 0, max: 40 } };
   const words = MOVE_WORDS[self.role] ?? MOVE_WORDS.farmer;
@@ -125,7 +125,7 @@ function MovePanel({ state, self, pending, setPending, confirmed, setConfirmed }
   const hint = words.hint(self);
 
   return (
-    <Panel bg={confirmed ? P.greenSoft : P.white}>
+    <div style={{ background: confirmed ? P.greenSoft : P.white, padding: 14 }}>
       <PixLabel size={10} style={{ marginBottom: 10 }}>👉 YOUR MOVE THIS ROUND</PixLabel>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
         <Stepper label={words.price} value={act.price} min={tier.priceBounds.min} max={tier.priceBounds.max} step={0.5} prefix="$" onChange={(v) => set({ price: v })} />
@@ -148,7 +148,7 @@ function MovePanel({ state, self, pending, setPending, confirmed, setConfirmed }
         {!state.started ? "⏸ WAITING FOR THE PROFESSOR" : confirmed ? "✓ DONE — WATCH THE TOWN" : "✅ CONFIRM MY MOVE"}
       </Btn>
       {!confirmed && <div style={{ fontFamily: bodyFont, fontSize: 14, opacity: 0.65, marginTop: 6, textAlign: "center" }}>If time runs out, you repeat last round's move.</div>}
-    </Panel>
+    </div>
   );
 }
 
@@ -261,26 +261,44 @@ export default function Game({ state, studentId, onReplayRound }) {
         ? "✓ Move locked in. Watch the town react!"
         : "👉 Set your price and amount, then CONFIRM";
 
-  const statusBar = (
-    <div style={{ marginBottom: 14 }}>
+  // Sticky header: wordmark + round number + timer stay pinned while scrolling,
+  // so students always know when the next round hits. Negative margins bleed
+  // over Screen's padding so scrolled content never peeks above it.
+  const stickyHeader = (
+    <div style={{ position: "sticky", top: 0, zIndex: 40, background: P.cream, margin: "-14px -12px 12px", padding: "10px 12px 10px", borderBottom: `4px solid ${P.ink}` }}>
+      <Wordmark sub={`${ROLE_META[self.role]?.emoji ?? ""} ${self.name} — ${ROLE_META[self.role]?.label} ${self.id}`} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontFamily: pixFont, fontSize: 11 }}>ROUND {Math.min(state.round, state.totalRounds ?? 12)}/{state.totalRounds ?? 12}</span>
         <span style={{ fontFamily: pixFont, fontSize: 12, color: left <= 8 ? P.red : P.ink }}>⏳ {waiting ? "—" : left != null ? `${left}s` : "—"}</span>
       </div>
       <Bar frac={waiting ? 1 : left != null ? frac : 1} color={left <= 8 && !waiting ? P.red : P.lemon} height={14} />
-      <div className={waiting ? "bob" : undefined} style={{ fontFamily: pixFont, fontSize: 9, marginTop: 7, padding: "8px 10px", background: confirmed && !waiting ? P.greenSoft : P.lemonSoft, border: BORDER, lineHeight: 1.7 }}>
-        {instruction}
-      </div>
     </div>
+  );
+
+  const instructionBar = (
+    <div className={waiting ? "bob" : undefined} style={{ fontFamily: pixFont, fontSize: 9, marginBottom: 14, padding: "8px 10px", background: confirmed && !waiting ? P.greenSoft : P.lemonSoft, border: BORDER, lineHeight: 1.7 }}>
+      {instruction}
+    </div>
+  );
+
+  // My move + Helper + Town news share one tabbed card — no deep scrolling.
+  const actionCard = (
+    <ChatPanel
+      state={state}
+      studentId={studentId}
+      onReplayRound={onReplayRound}
+      onPropose={(a) => { setConfirmed(false); setPending(a); }}
+      moveDone={confirmed}
+      movePanel={<MovePanel state={state} self={self} pending={pending} setPending={setPending} confirmed={confirmed} setConfirmed={setConfirmed} />}
+    />
   );
 
   const moveSide = (
     <div>
       <OfferCard state={state} studentId={studentId} />
-      <MovePanel state={state} self={self} pending={pending} setPending={setPending} confirmed={confirmed} setConfirmed={setConfirmed} />
+      {actionCard}
       <MiniStats self={self} />
       <RippleLine state={state} />
-      <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} onPropose={(a) => { setConfirmed(false); setPending(a); }} />
     </div>
   );
 
@@ -294,21 +312,20 @@ export default function Game({ state, studentId, onReplayRound }) {
 
   return (
     <div>
-      <Wordmark sub={`${ROLE_META[self.role]?.emoji ?? ""} ${self.name} — ${ROLE_META[self.role]?.label} ${self.id}`} />
-      {statusBar}
+      {stickyHeader}
+      {instructionBar}
       {wide ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14, alignItems: "start" }}>
           <div>{townSide}</div>
-          <div style={{ position: "sticky", top: 14 }}>{moveSide}</div>
+          <div style={{ position: "sticky", top: 132 }}>{moveSide}</div>
         </div>
       ) : (
         <div>
           <OfferCard state={state} studentId={studentId} />
-          <MovePanel state={state} self={self} pending={pending} setPending={setPending} confirmed={confirmed} setConfirmed={setConfirmed} />
+          {actionCard}
           {townSide}
           <MiniStats self={self} />
           <RippleLine state={state} />
-          <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} onPropose={(a) => { setConfirmed(false); setPending(a); }} />
         </div>
       )}
     </div>
