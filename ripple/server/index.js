@@ -94,12 +94,29 @@ function buildTickState(g, viewerId) {
   };
 }
 
-// ── Simple bot for empty slots / single-phone play ────────────────────────────
-function botDecision(g, id) {
-  const gr = g.growers[id];
-  // Hold price; produce roughly what sold last round (fall back to a modest 20).
-  const produce = gr.sold > 0 ? gr.sold : 20;
-  return { price: gr.price, produce, intent: "(bot) hold price, restock to demand", source: "bot" };
+// ── Competitive bot for empty slots / single-phone play ───────────────────────
+// Deterministic but responsive: reacts to the rival's price so the market feels
+// alive (undercuts when beaten, drifts up under a price umbrella, defends margin
+// after frost). No RNG — variation comes from the game state itself.
+function botDecision(game, id) {
+  const gr = game.growers[id];
+  const rivalId = Object.keys(game.growers).find((x) => x !== id);
+  const rival = game.growers[rivalId];
+  const cost = gr.unitCost;
+  let price = gr.price;
+
+  if (rival) {
+    if (rival.price < gr.price - 0.25) {
+      price = Math.max(cost + 1, rival.price - 0.25); // being undercut → follow down, keep margin
+    } else if (rival.price > gr.price + 1) {
+      price = gr.price + 0.5; // rival raised an umbrella → capture a little more margin
+    }
+  }
+  if (cost > 2) price = Math.max(price, cost + 2); // frost → defend margin
+  price = Math.min(15, Math.max(1, Math.round(price * 4) / 4)); // clamp, quarter-dollar
+
+  const produce = Math.min(60, Math.max(15, gr.sold > 0 ? gr.sold + 5 : 25));
+  return { price, produce, intent: "(bot) competitive response", source: "bot" };
 }
 
 // ── Round resolution + advance ────────────────────────────────────────────────

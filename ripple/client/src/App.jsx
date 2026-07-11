@@ -5,7 +5,7 @@ import Join from "./Join.jsx";
 import Report from "./Report.jsx";
 import Game from "./Game.jsx";
 import Cascade from "./Cascade.jsx";
-import { S, C, F } from "./ui.js";
+import { Screen, Wordmark, C, T } from "./ui.js";
 
 const isAdmin = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("admin");
 
@@ -14,18 +14,17 @@ function AdminBar() {
   const call = async (path) => {
     const res = await fetch(path, { method: "POST" });
     const data = await res.json().catch(() => ({}));
-    setMsg(`${path} → ${JSON.stringify(data)}`);
+    setMsg(`${path.replace("/admin/", "")} ✓`);
+    setTimeout(() => setMsg(""), 2500);
   };
+  const btn = (bg, color, border) => ({ padding: "8px 12px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, background: bg, color, border: `1px solid ${border}` });
   return (
-    <div style={{ ...S.wrap, paddingTop: 8, paddingBottom: 0 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button style={{ ...S.chip, background: C.amberBg, borderColor: C.amber, color: C.amber, fontWeight: 700 }} onClick={() => call("/admin/shock")}>
-          ❄ Inject FROST
-        </button>
-        <button style={S.chip} onClick={() => call("/admin/seed")}>Seed cohort</button>
-        <button style={S.chip} onClick={() => call("/admin/reset")}>Reset</button>
-      </div>
-      {msg && <div style={{ ...F.label, marginTop: 6 }}>{msg}</div>}
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
+      <span style={{ ...T.label, fontSize: 10 }}>Admin</span>
+      <button style={btn(C.frostSoft, C.frost, C.frost)} onClick={() => call("/admin/shock")}>❄ Inject frost</button>
+      <button style={btn("#fff", C.ink, C.line)} onClick={() => call("/admin/seed")}>Seed cohort</button>
+      <button style={btn("#fff", C.ink, C.line)} onClick={() => call("/admin/reset")}>Reset</button>
+      {msg && <span style={{ fontSize: 12, color: C.green, fontWeight: 700 }}>{msg}</span>}
     </div>
   );
 }
@@ -33,10 +32,9 @@ function AdminBar() {
 export default function App() {
   const [studentId, setStudentId] = useState(null);
   const [state, setState] = useState(null);
-  const [phase, setPhase] = useState("join"); // join | play | report
+  const [phase, setPhase] = useState("join");
   const [replayRound, setReplayRound] = useState(null);
 
-  // Poll the world every 2s while playing.
   useEffect(() => {
     if (!studentId || phase === "join") return;
     let cancelled = false;
@@ -47,9 +45,7 @@ export default function App() {
         if (cancelled) return;
         setState(data);
         if (data.phase === "done") setPhase("report");
-      } catch {
-        /* keep last state; poll again */
-      }
+      } catch { /* keep last state */ }
     };
     tick();
     const iv = setInterval(tick, 2000);
@@ -58,37 +54,36 @@ export default function App() {
 
   if (phase === "join") {
     return (
-      <>
+      <Screen>
         {isAdmin && <AdminBar />}
         <Join onJoined={(d) => { setStudentId(d.studentId); setPhase("play"); }} />
-      </>
+      </Screen>
     );
   }
 
   if (phase === "report") {
     return (
-      <div style={S.wrap}>
+      <Screen>
         {isAdmin && <AdminBar />}
-        <Report studentId={studentId} onReplayRound={(r) => setReplayRound(r)} />
-        <h3 style={{ marginTop: 24 }}>Cascade — the story of your decisions</h3>
+        <Report studentId={studentId} onReplayRound={setReplayRound} />
+        <h3 style={{ ...T.label, fontSize: 12, marginTop: 26, marginBottom: 10 }}>The story of your decisions</h3>
         <Cascade cascade={state?.cascade ?? []} studentId={studentId} replayRound={replayRound} onReplayRound={setReplayRound} />
-      </div>
+      </Screen>
     );
   }
 
-  // phase === "play"
   return (
-    <div style={S.wrap}>
+    <Screen>
       {isAdmin && <AdminBar />}
       {!state ? (
-        <p style={F.body}>Connecting to the market…</p>
+        <p style={{ ...T.body, color: C.muted }}>Connecting to the market…</p>
       ) : (
         <>
           <Game state={state} studentId={studentId} />
-          <h3 style={{ marginTop: 20, marginBottom: 8 }}>What your decisions set off</h3>
+          <h3 style={{ ...T.label, fontSize: 12, marginTop: 22, marginBottom: 10 }}>What your decisions set off</h3>
           <Cascade cascade={state.cascade ?? []} studentId={studentId} replayRound={replayRound} onReplayRound={setReplayRound} />
         </>
       )}
-    </div>
+    </Screen>
   );
 }
