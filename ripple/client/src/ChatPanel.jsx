@@ -9,10 +9,10 @@ import { useEffect, useRef, useState } from "react";
 import { P, BORDER, SHADOW, SHADOW_SM, pixFont, bodyFont, Btn, Chip, Tag } from "./pixel.js";
 
 const KIND_COLOR = {
-  elasticity: P.red, spoilage: P.red, panic: P.red, quality: P.red,
-  shock: P.sky, tax: P.sky, cartel: P.lemon, sellout: P.lemon, switch: P.green, aging: P.ink, price: P.ink,
+  elasticity: P.red, spoilage: P.red, quality: P.red, pricedout: P.red, shortage: P.red,
+  shock: P.sky, tax: P.sky, cartel: P.lemon, sellout: P.lemon, switch: P.green, price: P.ink,
 };
-const involvesMe = (e, id) => e.affected === id || String(e.cause ?? "").startsWith(id) || e.affected === "all";
+const involvesMe = (e, id) => e.affected === id || e.source === id || e.affected === "all";
 
 export default function ChatPanel({ state, studentId, onReplayRound, onPropose }) {
   const [tab, setTab] = useState("delegate");
@@ -44,10 +44,18 @@ export default function ChatPanel({ state, studentId, onReplayRound, onPropose }
 }
 
 // ── Delegate chat ─────────────────────────────────────────────────────────────
+const ROLE_HELLO = {
+  farmer: "Hi boss! Tell me what to charge the depots and how much to grow. 🍋",
+  wholesaler: "Hi boss! Tell me our ask price and how many crates to pull from the farms. 🚛",
+  grocer: "Hi boss! Tell me our shelf price and how much to order from the depots. 🛒",
+  restaurant: "Hi chef! Tell me our meal price and how many crates to order. 👨‍🍳",
+};
+
 function Delegate({ state, studentId, onPropose }) {
-  const self = state.growers.find((g) => g.id === studentId) ?? state.growers[0];
-  const rival = state.growers.find((g) => g.id !== studentId);
-  const [log, setLog] = useState([{ from: "delegate", text: "Hi! Tell me how to price our lemons — I'll show you the effect. 🍋" }]);
+  const self = state.players.find((g) => g.id === studentId) ?? state.players[0];
+  const peers = state.players.filter((g) => g.role === self.role && g.id !== studentId);
+  const cheapestPeer = peers.length ? peers.reduce((a, c) => (c.price < a.price ? c : a)) : null;
+  const [log, setLog] = useState([{ from: "delegate", text: ROLE_HELLO[self.role] ?? ROLE_HELLO.farmer }]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const scroller = useRef(null);
@@ -68,17 +76,18 @@ function Delegate({ state, studentId, onPropose }) {
       if (data.clarifyingQuestion) setLog((l) => [...l, { from: "delegate", text: data.clarifyingQuestion }]);
       else if (data.action) {
         onPropose?.({ ...data.action, intent: mine });
-        setLog((l) => [...l, { from: "delegate", text: `${data.reply ?? `Price $${data.action.price}, produce ${data.action.produce}.`} → see the 🔮 preview, then lock it in.` }]);
+        setLog((l) => [...l, { from: "delegate", text: `${data.reply ?? `Price $${data.action.price}, qty ${data.action.qty}.`} → check the 🔮 preview below the town, then lock it in.` }]);
       } else setLog((l) => [...l, { from: "delegate", text: "I couldn't read that — try rephrasing?" }]);
     } catch { setLog((l) => [...l, { from: "delegate", text: "Network hiccup — try again." }]); }
     setBusy(false);
   }
 
+  const qtyWord = self.role === "farmer" ? "grow" : "order";
   const chips = [
-    ["Raise $1", `raise price to $${self.price + 1}`],
-    ["Undercut 50¢", rival ? `undercut ${rival.name} to $${(rival.price - 0.5).toFixed(2)}` : "undercut the rival slightly"],
+    ["Raise 50¢", `raise price to $${(self.price + 0.5).toFixed(2)}`],
+    ["Undercut 25¢", cheapestPeer ? `undercut ${cheapestPeer.id} to $${(cheapestPeer.price - 0.25).toFixed(2)}` : "undercut my competitors slightly"],
     ["Hold", `hold at $${self.price}`],
-    ["Produce +10", "produce 10 more crates"],
+    [qtyWord === "grow" ? "Grow +5" : "Order +5", `${qtyWord} 5 more`],
   ];
 
   return (

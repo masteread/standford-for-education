@@ -151,7 +151,19 @@ export function Wordmark({ sub }) {
 /** Goal label lookup shared by cards/reports. */
 export const GOAL_LABEL = {
   max_profit: "Make the most PROFIT over 12 rounds",
-  max_market_share: "Capture the BIGGEST market share",
-  survive_shock_cash_80: "Survive the frost with CASH over $80",
+  market_share: "Capture the BIGGEST share of your tier",
+  survive_frost: "Survive the frost with CASH over $60",
   zero_spoilage: "End with ZERO spoiled crates",
+  volume_mover: "Move 100+ crates through your depot",
+  perfect_fill: "Fill 90%+ of the orders that reach you",
+  clean_reputation: "Never sell a bad lemon",
+  serve_meals: "Serve 60+ meals at your café",
+};
+
+/** Role metadata shared by every screen. */
+export const ROLE_META = {
+  farmer: { emoji: "🧑‍🌾", glyph: "🌾", label: "Lemon Farm", tint: P.greenSoft, qtyWord: "grow" },
+  wholesaler: { emoji: "🚛", glyph: "🏭", label: "Wholesale Depot", tint: P.skySoft, qtyWord: "order" },
+  grocer: { emoji: "🛒", glyph: "🏪", label: "Grocery Store", tint: P.lemonSoft, qtyWord: "order" },
+  restaurant: { emoji: "👨‍🍳", glyph: "🍽️", label: "Lemon Café", tint: P.redSoft, qtyWord: "order" },
 };

@@ -1,229 +1,216 @@
-// The town of Lemonville — an animated pixel scene, the demo centerpiece.
-// A market square with a sky (drifting clouds, sun, birds), a skyline of houses,
-// a cobblestone street, two market stalls with striped awnings + flipping price
-// signs, a patrolling dog, and 20 townsfolk who WALK to the stall they buy from
-// after each round — the crowd distribution mirrors the engine's demand split
-// exactly (the crowd IS the demand curve). Priced-out folk trudge off with 💸.
-// All CSS/emoji, no sprite sheets.
+// The town of Lemonville — a living pixel city and the demo centerpiece.
+// Three bands: farms on the ridge, warehouse district, main street of grocers &
+// cafés, and 24 townsfolk homes at the bottom. When a round resolves, the
+// BUTTERFLY CASCADE physically plays out in stages:
+//   step 1  price signs flip + ripple pulses at every player who moved
+//   step 2  🚚 trucks run farm → depot along the top road (real trades)
+//   step 3  🚐 vans run depot → shops (real trades)
+//   step 4  townsfolk WALK home → shop (real folkTrips); priced-out folk stay
+//           home with 💸; then speech bubbles from real cascade entries
+// Every moving sprite is an entry in the engine's ledger — nothing is decorative
+// guesswork. All CSS/emoji, no sprite sheets, no chart libs.
+import { useEffect, useRef, useState } from "react";
 import { P, BORDER, SHADOW, pixFont, bodyFont, Tag } from "./pixel.js";
-import { project } from "./market-preview.js";
+import { BUILDING_POS, ROADS, ROLE_GLYPH, ROLE_TINT, homePos, shopSpot, folkIndex } from "./town-layout.js";
 
-const FOLK = ["🧑‍🌾", "👵", "🧒", "👨‍🍳", "🧓", "👩‍🦰", "🧔", "👦", "👩", "🧑", "👴", "👧", "🧑‍🦱", "👨‍🦰", "👩‍🌾"];
-const HOUSES = ["🏠", "🏪", "🏛️", "🏫", "🏬", "🏘️", "⛪", "🏦"];
+const STEP_AT = [0, 400, 1600, 2900, 4200]; // ms offsets for steps 1..4
+const PLAYBACK_MS = 7200;
 
-// Place `indices` around a center x (%), alternating two depth rows.
-function place(indices, centerX, tops) {
-  const n = Math.ceil(indices.length / 2);
-  return indices.map((idx, k) => {
-    const row = k % 2;
-    const col = Math.floor(k / 2);
-    return {
-      idx,
-      left: centerX + (col - (n - 1) / 2) * 8.5,
-      top: row === 0 ? tops[0] : tops[1],
-      scale: row === 0 ? 0.85 : 1.12,
-      z: row === 0 ? 2 : 3,
-    };
-  });
+/** Stage the resolution playback: returns current step (0 = idle) + shown trips. */
+function usePlayback(lastResolution) {
+  const [step, setStep] = useState(0);
+  const [trips, setTrips] = useState(lastResolution?.folkTrips ?? []);
+  const seen = useRef(null);
+  useEffect(() => {
+    const key = lastResolution?.resolvedAt;
+    if (!key || seen.current === key) return;
+    const first = seen.current === null;
+    seen.current = key;
+    if (first) { setTrips(lastResolution.folkTrips ?? []); return; } // joined mid-game: no replay
+    const timers = [1, 2, 3, 4].map((s) => setTimeout(() => setStep(s), STEP_AT[s]));
+    timers.push(setTimeout(() => setTrips(lastResolution.folkTrips ?? []), STEP_AT[4]));
+    timers.push(setTimeout(() => setStep(0), PLAYBACK_MS));
+    return () => timers.forEach(clearTimeout);
+  }, [lastResolution?.resolvedAt]);
+  return { step, trips };
 }
 
-/** Assign 20 townsfolk to {A, B, off, idle} based on sold + demand. */
-function assign(state, ids) {
-  const g = {};
-  for (const gr of state.growers) g[gr.id] = gr;
-  const [a, b] = ids;
-  const soldA = g[a]?.sold ?? 0;
-  const soldB = g[b]?.sold ?? 0;
-  const total = soldA + soldB;
-  const N = state.townsfolk ?? 20;
-  if (total === 0) return { A: [], B: [], off: [], idle: [...Array(N).keys()] };
-  const active = Math.max(0, Math.min(N, Math.round((N * (state.market.totalDemand ?? total)) / 100)));
-  const nA = Math.round((active * soldA) / total);
-  const nB = Math.max(0, active - nA);
-  const out = { A: [], B: [], off: [], idle: [] };
-  let i = 0;
-  for (let k = 0; k < nA && i < N; k++, i++) out.A.push(i);
-  for (let k = 0; k < nB && i < N; k++, i++) out.B.push(i);
-  for (; i < N; i++) out.off.push(i);
-  return out;
-}
-
-function bubbles(state, ids) {
-  const cascade = state.cascade ?? [];
-  if (!cascade.length) return [];
-  const last = Math.max(...cascade.map((c) => c.round));
-  const kinds = new Set(cascade.filter((c) => c.round === last).map((c) => c.kind));
-  const g = {};
-  for (const gr of state.growers) g[gr.id] = gr;
-  const cheaper = (g[ids[0]]?.price ?? 0) <= (g[ids[1]]?.price ?? 0) ? "A" : "B";
-  const out = [];
-  if (kinds.has("switch")) out.push({ side: cheaper, text: "Cheaper here!" });
-  if (kinds.has("sellout")) out.push({ side: cheaper, text: "Sold out! 😮" });
-  if (kinds.has("quality")) out.push({ side: "off", text: "Bad lemons! 🤢" });
-  if (kinds.has("tax")) out.push({ side: "off", text: "Pricey now 😕" });
-  if (kinds.has("elasticity")) out.push({ side: "off", text: "Too dear! 😤" });
-  return out.slice(0, 3);
-}
-
-function Stall({ gr, mine, x }) {
-  const stripeA = mine ? P.lemon : P.green;
+/** A sprite that glides from → to (CSS transition does the moving). */
+function Mover({ from, to, emoji, label, duration = 1100, size = 22 }) {
+  const [pos, setPos] = useState(from);
+  useEffect(() => {
+    const t = setTimeout(() => setPos(to), 40);
+    return () => clearTimeout(t);
+  }, []);
   return (
-    <div style={{ position: "absolute", left: `${x}%`, top: "34%", transform: "translateX(-50%)", width: 132, textAlign: "center", zIndex: 2 }}>
-      {/* hanging price sign — flips when the price changes */}
-      <div style={{ width: 2, height: 8, background: P.ink, margin: "0 auto" }} />
-      <div key={gr.price} className="flip" style={{ display: "inline-block", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "3px 8px", fontFamily: pixFont, fontSize: 13, marginBottom: 2 }}>
-        ${gr.price}
-      </div>
-      {/* striped awning */}
-      <div style={{ height: 16, border: BORDER, borderBottom: "none", background: `repeating-linear-gradient(90deg, ${stripeA} 0 12px, ${P.white} 12px 24px)` }} />
-      {/* counter (wood) with a lemon pile + keeper */}
-      <div style={{ border: BORDER, background: "#C9A227", padding: "4px 0 6px", position: "relative" }}>
-        <div style={{ position: "absolute", top: -22, left: 8, fontSize: 22 }} className="bob">{mine ? "🧑‍🌾" : "🧔"}</div>
-        <div style={{ fontSize: 20, letterSpacing: -6 }}>🍋🍋🍋</div>
-      </div>
-      {/* name plate */}
-      <div style={{ background: mine ? P.lemon : P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, fontFamily: pixFont, fontSize: 8, padding: "3px 2px", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {mine ? "YOUR STAND" : gr.name}
-      </div>
+    <div style={{ position: "absolute", left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%,-50%)", transition: `left ${duration}ms ease-in-out, top ${duration}ms ease-in-out`, zIndex: 9, textAlign: "center" }}>
+      <span style={{ fontSize: size, display: "block", lineHeight: 1 }}>{emoji}</span>
+      {label && <span style={{ fontFamily: pixFont, fontSize: 7, background: P.white, border: `2px solid ${P.ink}`, padding: "1px 3px", whiteSpace: "nowrap" }}>{label}</span>}
     </div>
   );
 }
 
-function Person({ p, emoji, round, sad, buying }) {
-  return (
-    <div className="walk" style={{ position: "absolute", left: `${p.left}%`, top: `${p.top}%`, transform: "translateX(-50%)", zIndex: p.z }}>
-      {buying && <span key={round} className="coin" style={{ position: "absolute", left: "50%", top: -14, fontSize: 13 }}>🪙</span>}
-      <span className="step" style={{ display: "inline-block", fontSize: 30 * p.scale, filter: sad ? "grayscale(1)" : "none", opacity: sad ? 0.55 : 1 }}>
-        {emoji}
-      </span>
-      {sad && <span style={{ position: "absolute", left: "60%", top: -6, fontSize: 13 }}>💸</span>}
-    </div>
-  );
+function PulseRing({ x, y, color = P.red }) {
+  return <span className="pulse" style={{ position: "absolute", left: `${x}%`, top: `${y}%`, width: 18, height: 18, marginLeft: -9, marginTop: -9, border: `3px solid ${color}`, borderRadius: "50%", zIndex: 8 }} />;
 }
 
 function Bubble({ x, y, text }) {
   return (
-    <div className="pop" style={{ position: "absolute", left: `${x}%`, top: `${y}%`, transform: "translateX(-50%)", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "3px 6px", fontFamily: bodyFont, fontSize: 15, whiteSpace: "nowrap", zIndex: 7 }}>
+    <div className="pop" style={{ position: "absolute", left: `${x}%`, top: `${y}%`, transform: "translateX(-50%)", background: P.white, border: `3px solid ${P.ink}`, boxShadow: `2px 2px 0 ${P.ink}`, padding: "2px 6px", fontFamily: bodyFont, fontSize: 14, whiteSpace: "nowrap", zIndex: 11 }}>
       {text}
     </div>
   );
 }
 
-// Projected crowd for the live preview: scale the current townsfolk to the
-// projected buyer split so people visibly re-cluster as you scrub the price.
-function previewPlace(count, centerX, topBase) {
-  const n = Math.ceil(count / 2);
-  return [...Array(count).keys()].map((k) => {
-    const row = k % 2, col = Math.floor(k / 2);
-    return { key: `${centerX}-${k}`, left: centerX + (col - (n - 1) / 2) * 6.5, top: row ? topBase + 9 : topBase };
-  });
+function Building({ p, mine, step }) {
+  const pos = BUILDING_POS[p.id];
+  if (!pos) return null;
+  const glyph = ROLE_GLYPH[p.role];
+  const tint = ROLE_TINT[p.role];
+  const stock = Math.min(p.stock ?? 0, 12);
+  return (
+    <div style={{ position: "absolute", left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%,-50%)", textAlign: "center", zIndex: 4, width: 86 }}>
+      {/* price sign — key on price so it flips when it changes */}
+      <div key={p.price} className="flip" style={{ display: "inline-block", background: p.badRep ? P.redSoft : P.white, border: `3px solid ${P.ink}`, boxShadow: `2px 2px 0 ${P.ink}`, padding: "2px 5px", fontFamily: pixFont, fontSize: 10, marginBottom: 2 }}>
+        ${p.price}{p.badRep ? " 🤢" : ""}
+      </div>
+      <div style={{ fontSize: 30, lineHeight: 1.05, filter: mine ? `drop-shadow(0 0 6px ${P.lemon})` : "none" }}>{glyph}</div>
+      {/* shelf/stock strip */}
+      <div style={{ fontSize: 9, letterSpacing: -2, minHeight: 12, opacity: 0.95 }}>
+        {stock > 0 ? "🍋".repeat(Math.max(1, Math.round(stock / 2))) : <span style={{ fontFamily: pixFont, fontSize: 6, color: P.red }}>EMPTY</span>}
+      </div>
+      {step > 0 && p.sold > 0 && (
+        <div key={`sold-${step}`} className="coin" style={{ position: "absolute", top: -10, right: 0, fontSize: 12 }}>💰</div>
+      )}
+      <div style={{ background: mine ? P.lemon : tint, border: `3px solid ${P.ink}`, boxShadow: `2px 2px 0 ${P.ink}`, fontFamily: pixFont, fontSize: 7, padding: "2px 2px", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {mine ? "★ YOU" : p.name.length > 12 ? p.id : p.name}{p.isHuman && !mine ? " 🧑" : ""}
+      </div>
+    </div>
+  );
 }
 
-export default function Town({ state, studentId, pending, previewActive }) {
-  const ids = state.growers.map((g) => g.id);
-  const a = state.growers.find((g) => g.id === ids[0]);
-  const b = state.growers.find((g) => g.id === ids[1]);
-  const self = state.growers.find((g) => g.id === studentId) ?? a;
-  const rival = state.growers.find((g) => g.id !== studentId) ?? b;
-  const groups = assign(state, ids);
-  const speech = bubbles(state, ids);
-  const round = state.round;
-
-  // Live projection of the pending move on the whole ecosystem.
-  const myStallX = self.id === ids[0] ? 25 : 75;
-  const rivalStallX = myStallX === 25 ? 75 : 25;
-  let proj = null, previewCrowd = [];
-  if (previewActive && pending) {
-    const inv = (self.inventory ?? []).reduce((s, c) => s + c.crates, 0);
-    proj = project({ myPrice: pending.price, rivalPrice: rival.price, inventory: inv, produce: pending.produce, unitCost: self.unitCost, salesTax: state.salesTax ?? 0 });
-    const N = state.townsfolk ?? 20;
-    const totalB = proj.myBuyers + proj.rivalBuyers;
-    const nMine = totalB ? Math.round((N * proj.myBuyers) / totalB) : Math.round(N / 2);
-    previewCrowd = [
-      ...previewPlace(Math.min(nMine, 12), myStallX, 60).map((p) => ({ ...p })),
-      ...previewPlace(Math.min(totalB - nMine, 12), rivalStallX, 60).map((p) => ({ ...p })),
-    ];
+/** Speech bubbles sampled from the round's REAL cascade entries. */
+function bubblesFor(cascade, step) {
+  if (step < 4 || !cascade?.length) return [];
+  const out = [];
+  const at = (id, dy = -8) => {
+    const b = BUILDING_POS[id];
+    return b ? { x: b.x, y: b.y + dy } : { x: 50, y: 74 };
+  };
+  for (const c of cascade) {
+    if (out.length >= 4) break;
+    if (c.kind === "switch" && c.source) out.push({ ...at(c.source), text: "Cheaper here! 🚶" });
+    else if (c.kind === "sellout") out.push({ ...at(c.affected), text: "Sold out! 😮" });
+    else if (c.kind === "shortage") out.push({ ...at(c.affected), text: "Where's my delivery?! 📦" });
+    else if (c.kind === "quality") out.push({ ...at(c.affected ?? c.source), text: "Bad lemons! 🤢" });
+    else if (c.kind === "pricedout") out.push({ x: 50, y: 76, text: "Too pricey! 😤" });
+    else if (c.kind === "spoilage") out.push({ ...at(c.affected), text: "It all went brown… 🟤" });
   }
+  return out;
+}
 
-  const pos = {};
-  place(groups.A, 25, [64, 80]).forEach((p) => (pos[p.idx] = { ...p, buying: true }));
-  place(groups.B, 75, [64, 80]).forEach((p) => (pos[p.idx] = { ...p, buying: true }));
-  place(groups.off, 92, [70, 86]).forEach((p, i) => (pos[p.idx] = { ...p, left: i % 2 ? 96 : 5, sad: true }));
-  place(groups.idle, 50, [66, 82]).forEach((p) => (pos[p.idx] = { ...p }));
+export default function Town({ state, studentId }) {
+  const lr = state.lastResolution;
+  const { step, trips } = usePlayback(lr);
+  const players = state.players;
+  const folk = state.folk ?? [];
 
-  const bubbleAt = { A: { x: 25, y: 25 }, B: { x: 75, y: 25 }, off: { x: 50, y: 63 } };
+  // trucks (step 2) + vans (step 3) from the trade ledger
+  const trades = lr?.trades ?? [];
+  const trucks = step === 2 ? trades.filter((t) => t.from.startsWith("F")) : [];
+  const vans = step === 3 ? trades.filter((t) => t.from.startsWith("W")) : [];
+
+  // folk placement from the shown trips (the crowd IS the ledger)
+  const tripByFolk = {};
+  for (const t of trips) if (t.kind === "grocery" || (t.kind === "meal" && t.to)) tripByFolk[t.folk] ??= t;
+  for (const t of trips) if (!tripByFolk[t.folk]) tripByFolk[t.folk] = t;
+
+  // movers who moved price this round → pulse rings (step 1+)
+  const pulses = step >= 1 ? (lr?.cascade ?? []).filter((c) => c.kind === "price" && c.source && BUILDING_POS[c.source]) : [];
+  const bubbles = bubblesFor(lr?.cascade, step);
+  const metrics = lr?.metrics;
 
   return (
     <div style={{ marginBottom: 14 }}>
-      <div
-        style={{
-          position: "relative", border: BORDER, boxShadow: SHADOW, overflow: "hidden",
-          height: "min(58vw, 430px)", minHeight: 360,
-          background: "linear-gradient(#BFE3FF 0%, #DFF1FF 44%, #CDE8A6 44%, #CDE8A6 58%, #B8AE93 58%, #A89E82 100%)",
-        }}
-      >
+      <div style={{ position: "relative", border: BORDER, boxShadow: SHADOW, overflow: "hidden", height: "min(120vw, 560px)", minHeight: 480, background: "linear-gradient(#BFE3FF 0%, #DFF1FF 9%, #CDE8A6 9%, #BFDD90 24%, #D9CFA8 24%, #D9CFA8 31%, #CFE3B0 31%, #C4DCA0 46%, #BFB694 46%, #BFB694 52%, #E8DFC0 52%, #DED4B2 70%, #CDE8A6 70%, #B9DB92 100%)" }}>
         {/* sky ambience */}
-        <span className="sun" style={{ position: "absolute", top: 10, right: 16, fontSize: 34, zIndex: 1 }}>☀️</span>
-        <span className="drift" style={{ position: "absolute", top: 22, fontSize: 28, zIndex: 1 }}>☁️</span>
-        <span className="drift2" style={{ position: "absolute", top: 60, fontSize: 22, zIndex: 1 }}>☁️</span>
-        <span className="fly" style={{ position: "absolute", top: 40, fontSize: 16, zIndex: 1 }}>🐦</span>
+        <span className="sun" style={{ position: "absolute", top: 6, right: 14, fontSize: 30, zIndex: 1 }}>☀️</span>
+        <span className="drift" style={{ position: "absolute", top: 8, fontSize: 24, zIndex: 1 }}>☁️</span>
+        <span className="drift2" style={{ position: "absolute", top: 26, fontSize: 18, zIndex: 1 }}>☁️</span>
+        <span className="fly" style={{ position: "absolute", top: 18, fontSize: 14, zIndex: 1 }}>🐦</span>
 
-        {/* skyline of houses along the horizon */}
-        <div style={{ position: "absolute", top: "30%", left: 0, right: 0, display: "flex", justifyContent: "space-around", alignItems: "flex-end", zIndex: 1, opacity: 0.95 }}>
-          {HOUSES.map((h, i) => <span key={i} style={{ fontSize: 30 + (i % 3) * 6 }}>{h}</span>)}
-        </div>
+        {/* roads */}
+        {ROADS.map((r, i) => (
+          <div key={i} style={{ position: "absolute", left: 0, right: 0, top: `${r.y}%`, height: "4.5%", background: "#8B8378", borderTop: `3px solid ${P.ink}`, borderBottom: `3px solid ${P.ink}`, zIndex: 2 }}>
+            <div style={{ height: 2, marginTop: "1.6%", background: "repeating-linear-gradient(90deg, #FFF 0 18px, transparent 18px 36px)" }} />
+          </div>
+        ))}
+        {/* district labels */}
+        <div style={{ position: "absolute", left: 4, top: "6.5%", fontFamily: pixFont, fontSize: 7, opacity: 0.55, zIndex: 2 }}>🌾 FARMS</div>
+        <div style={{ position: "absolute", left: 4, top: "33%", fontFamily: pixFont, fontSize: 7, opacity: 0.55, zIndex: 2 }}>🏭 DEPOTS</div>
+        <div style={{ position: "absolute", left: 4, top: "53.5%", fontFamily: pixFont, fontSize: 7, opacity: 0.55, zIndex: 2 }}>🛒 MAIN ST</div>
+        <div style={{ position: "absolute", left: 4, top: "76%", fontFamily: pixFont, fontSize: 7, opacity: 0.55, zIndex: 2 }}>🏠 HOMES</div>
 
-        {/* trees flanking the square */}
-        <span className="sway" style={{ position: "absolute", left: 6, top: "50%", fontSize: 34, zIndex: 2 }}>🌳</span>
-        <span className="sway" style={{ position: "absolute", right: 6, top: "50%", fontSize: 34, zIndex: 2 }}>🌳</span>
+        {/* trees + dog */}
+        <span className="sway" style={{ position: "absolute", right: 5, top: "22%", fontSize: 26, zIndex: 3 }}>🌳</span>
+        <span className="sway" style={{ position: "absolute", right: 8, top: "66%", fontSize: 26, zIndex: 3 }}>🌳</span>
+        <span className="patrol" style={{ position: "absolute", top: "72%", fontSize: 18, zIndex: 5 }}>🐕</span>
 
-        {/* the two market stalls */}
-        <Stall gr={a} mine={a.id === studentId} x={25} />
-        <Stall gr={b} mine={b.id === studentId} x={75} />
+        {/* buildings */}
+        {players.map((p) => <Building key={p.id} p={p} mine={p.id === studentId} step={step} />)}
 
-        {/* patrolling dog */}
-        <span className="patrol" style={{ position: "absolute", top: "90%", fontSize: 22, zIndex: 3 }}>🐕</span>
+        {/* ripple pulses at movers */}
+        {pulses.map((c, i) => <PulseRing key={`${c.source}-${i}`} x={BUILDING_POS[c.source].x} y={BUILDING_POS[c.source].y} color={P.red} />)}
 
-        {/* townsfolk (dimmed while you explore a pending move) */}
-        <div style={{ opacity: previewActive ? 0.22 : 1, transition: "opacity .2s" }}>
-          {[...Array(state.townsfolk ?? 20).keys()].map((i) => {
-            const p = pos[i] ?? { left: 50, top: 84, scale: 1, z: 3, sad: true };
-            return <Person key={i} p={p} emoji={FOLK[i % FOLK.length]} round={round} sad={p.sad} buying={p.buying} />;
-          })}
-        </div>
+        {/* trucks + vans running the actual trades */}
+        {trucks.map((t, i) => (
+          <Mover key={`tk-${lr.round}-${i}`} from={BUILDING_POS[t.from]} to={BUILDING_POS[t.to]} emoji="🚚" label={`${t.qty}📦 $${t.price}`} />
+        ))}
+        {vans.map((t, i) => (
+          <Mover key={`vn-${lr.round}-${i}`} from={BUILDING_POS[t.from]} to={BUILDING_POS[t.to]} emoji={t.bad ? "🚐🤢" : "🚐"} label={`${t.qty}📦`} size={19} />
+        ))}
 
-        {/* LIVE PREVIEW overlay — the whole ecosystem reacting to your pending move */}
-        {previewActive && proj && (
-          <>
-            <div style={{ position: "absolute", top: 6, left: "50%", transform: "translateX(-50%)", background: P.lemon, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "3px 8px", fontFamily: pixFont, fontSize: 8, zIndex: 8, whiteSpace: "nowrap" }}>
-              🔮 PREVIEW · town demand {proj.D} · if {rival.name} holds ${rival.price}
+        {/* townsfolk — home, or clustered at the shop they actually bought from */}
+        {folk.map((f, i) => {
+          const idx = folkIndex(f.id);
+          const trip = tripByFolk[f.id];
+          const bought = trip?.to;
+          const pos = bought ? shopSpot(trip.to, idx) : homePos(idx);
+          const sad = trip && !trip.to && trip.reason === "pricedOut";
+          const hungry = trip && !trip.to && trip.reason === "empty";
+          return (
+            <div key={f.id} className="walk" style={{ position: "absolute", left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%,-50%)", zIndex: 6, textAlign: "center" }}>
+              <span className={bought ? "step" : "bob"} style={{ display: "inline-block", fontSize: 19, filter: sad ? "grayscale(1)" : "none", opacity: sad ? 0.55 : 1 }}>{f.emoji}</span>
+              {sad && <span style={{ position: "absolute", left: "58%", top: -8, fontSize: 11 }}>💸</span>}
+              {hungry && <span style={{ position: "absolute", left: "58%", top: -8, fontSize: 11 }}>❓</span>}
+              {bought && trip.bad && <span key={`b${lr?.round}`} className="pop" style={{ position: "absolute", left: "58%", top: -8, fontSize: 11 }}>🤢</span>}
             </div>
-            {/* projected buyer badges above each stall */}
-            <div style={{ position: "absolute", left: `${myStallX}%`, top: "20%", transform: "translateX(-50%)", background: P.green, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "2px 6px", fontFamily: pixFont, fontSize: 9, zIndex: 8 }}>~{proj.myBuyers} 🚶</div>
-            <div style={{ position: "absolute", left: `${rivalStallX}%`, top: "20%", transform: "translateX(-50%)", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "2px 6px", fontFamily: pixFont, fontSize: 9, zIndex: 8 }}>~{proj.rivalBuyers} 🚶</div>
-            {/* faint projected crowd re-clustering live */}
-            {previewCrowd.map((p) => (
-              <div key={p.key} className="walk" style={{ position: "absolute", left: `${p.left}%`, top: `${p.top}%`, transform: "translateX(-50%)", fontSize: 20, opacity: 0.5, zIndex: 6 }}>🧍</div>
-            ))}
-          </>
-        )}
+          );
+        })}
 
-        {/* speech bubbles */}
-        {!previewActive && speech.map((s, i) => <Bubble key={i} x={bubbleAt[s.side].x} y={bubbleAt[s.side].y} text={s.text} />)}
+        {/* speech bubbles from real cascade entries */}
+        {bubbles.map((b, i) => <Bubble key={i} x={b.x} y={b.y} text={b.text} />)}
 
-        {/* idle hint */}
-        {groups.idle.length > 0 && (
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "6px 10px", fontFamily: pixFont, fontSize: 9, zIndex: 6 }}>
-            Market opens — set your price! 🍋
+        {/* playback caption */}
+        {step > 0 && (
+          <div style={{ position: "absolute", top: 4, left: "50%", transform: "translateX(-50%)", background: P.lemon, border: `3px solid ${P.ink}`, boxShadow: `2px 2px 0 ${P.ink}`, padding: "3px 8px", fontFamily: pixFont, fontSize: 8, zIndex: 12, whiteSpace: "nowrap" }}>
+            {step === 1 && `📣 ROUND ${lr.round}: prices move…`}
+            {step === 2 && "🚚 farms ship to depots…"}
+            {step === 3 && "🚐 depots supply main street…"}
+            {step === 4 && "🚶 the town goes shopping"}
           </div>
         )}
       </div>
 
+      {/* town vitals strip */}
       <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <Tag bg={P.white}>Demand {state.market.totalDemand ?? "—"}</Tag>
-        <Tag bg={P.white}>Avg ${state.market.avgPrice ?? "—"}</Tag>
-        <Tag bg={P.lemon}>{a.id === studentId ? "You" : a.name} sold {a.sold}</Tag>
-        <Tag bg={P.green}>{b.id === studentId ? "You" : b.name} sold {b.sold}</Tag>
+        <Tag bg={P.white}>Welfare ${metrics?.welfare ?? "—"}</Tag>
+        <Tag bg={P.white}>Surplus ${metrics?.consumerSurplus ?? "—"}</Tag>
+        <Tag bg={(metrics?.pricedOut ?? 0) >= 8 ? P.red : P.white}>😤 priced out {metrics?.pricedOut ?? "—"}</Tag>
+        <Tag bg={P.lemon}>F ${metrics?.avgPrice?.farmer ?? "—"}</Tag>
+        <Tag bg={P.skySoft}>W ${metrics?.avgPrice?.wholesaler ?? "—"}</Tag>
+        <Tag bg={P.greenSoft}>G ${metrics?.avgPrice?.grocer ?? "—"}</Tag>
+        <Tag bg={P.redSoft}>R ${metrics?.avgPrice?.restaurant ?? "—"}</Tag>
       </div>
     </div>
   );

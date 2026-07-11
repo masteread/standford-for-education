@@ -55,7 +55,10 @@ export default function Join({ onJoined }) {
       <div style={{ textAlign: "center", marginTop: 20 }}>
         <div style={{ fontSize: 56 }} className="bob">🍋</div>
         <div style={{ fontFamily: pixFont, fontSize: 26, margin: "10px 0" }}>LEMONVILLE</div>
-        <div style={{ fontFamily: bodyFont, fontSize: 19, opacity: 0.8 }}>Run a lemon stand. Outsmart the market. Get graded on how you think.</div>
+        <div style={{ fontFamily: bodyFont, fontSize: 19, opacity: 0.8 }}>
+          The class IS the economy: farms → depots → grocers & cafés → the town.
+          Take a seat in the chain, and every move you make ripples through everyone else's business. 🦋
+        </div>
       </div>
       <Panel style={{ marginTop: 20 }}>
         <form onSubmit={join}>

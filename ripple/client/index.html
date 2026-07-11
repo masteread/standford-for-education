@@ -88,6 +88,9 @@
       @keyframes sun { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
       .coin { animation: coin .9s steps(6) forwards; }
       @keyframes coin { 0% { opacity: 0; transform: translate(-50%, 0) scale(.4); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -22px) scale(1); } }
+      /* butterfly-cascade ripple ring, radiating from the player who moved */
+      .pulse { animation: pulse 1.6s steps(8) 3; }
+      @keyframes pulse { 0% { transform: scale(.4); opacity: .95; } 100% { transform: scale(4.5); opacity: 0; } }
     </style>
   </head>
   <body>

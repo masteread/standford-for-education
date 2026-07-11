@@ -6,11 +6,11 @@ import { useEffect, useRef } from "react";
 import { P, BORDER, SHADOW_SM, pixFont, bodyFont, Tag } from "./pixel.js";
 
 const KIND_COLOR = {
-  elasticity: P.red, spoilage: P.red, panic: P.red, quality: P.red,
-  shock: P.sky, tax: P.sky, cartel: P.lemon, sellout: P.lemon, switch: P.green, aging: P.ink, price: P.ink,
+  elasticity: P.red, spoilage: P.red, quality: P.red, pricedout: P.red, shortage: P.red,
+  shock: P.sky, tax: P.sky, cartel: P.lemon, sellout: P.lemon, switch: P.green, price: P.ink,
 };
-const KIND_ICON = { elasticity: "⚡", shock: "❄️", tax: "📜", quality: "🕵️", cartel: "🤝", spoilage: "🟤", sellout: "🔥", switch: "🚶", panic: "📉" };
-const involvesMe = (e, id) => e.affected === id || String(e.cause ?? "").startsWith(id) || e.affected === "all";
+const KIND_ICON = { elasticity: "⚡", shock: "❄️", tax: "📜", quality: "🕵️", cartel: "🤝", spoilage: "🟤", sellout: "🔥", switch: "🚶", shortage: "📦", pricedout: "😤" };
+const involvesMe = (e, id) => e.affected === id || e.source === id || e.affected === "all";
 
 export default function CascadeList({ cascade, studentId, replayRound, onReplayRound }) {
   const refs = useRef({});

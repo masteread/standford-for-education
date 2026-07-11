@@ -383,6 +383,7 @@ app.get("/professor/data", async (req, res) => {
       tasks: TASK_IDS,
       dimensions: DIMENSIONS,
       history: game.state.history,
+      cascade: game.cascadeLog,
       seats: Object.values(game.state.players).map((p) => ({ id: p.id, role: p.role, name: p.name, isHuman: p.isHuman })),
       scenario: { events: scenario.events, tiers: slimScenario.tiers, goalLabels: GOAL_LABELS },
     });
