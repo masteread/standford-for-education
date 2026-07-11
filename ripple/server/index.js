@@ -15,7 +15,7 @@ import { relevantTo } from "./cascade.js";
 import { castStudent } from "./agents/orchestrator.js";
 import { runDelegate } from "./agents/delegate.js";
 import { gradeCohort } from "./agents/examiner.js";
-import { saveState, appendDecision } from "./butterbase.js";
+import { saveState, appendDecision, getLeaderboard } from "./butterbase.js";
 import { seededCohort, sampleCascade } from "../test/fixtures.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -253,6 +253,15 @@ app.post("/admin/reset", (req, res) => {
 app.post("/admin/seed", (req, res) => {
   game.seededCohort = seededCohort();
   res.json({ ok: true, players: game.seededCohort.length });
+});
+
+// GET /admin/leaderboard → decision-quality ranking (populated once reports run).
+app.get("/admin/leaderboard", async (req, res) => {
+  try {
+    res.json(await getLeaderboard());
+  } catch {
+    res.json([]);
+  }
 });
 
 // GET /admin/state → full unfiltered state for the admin page.

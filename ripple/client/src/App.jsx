@@ -5,9 +5,12 @@ import Join from "./Join.jsx";
 import Report from "./Report.jsx";
 import Game from "./Game.jsx";
 import Cascade from "./Cascade.jsx";
+import Board from "./Board.jsx";
 import { Screen, Wordmark, C, T } from "./ui.js";
 
-const isAdmin = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("admin");
+const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const isAdmin = params.has("admin");
+const isBoard = params.get("view") === "board";
 
 function AdminBar() {
   const [msg, setMsg] = useState("");
@@ -51,6 +54,8 @@ export default function App() {
     const iv = setInterval(tick, 2000);
     return () => { cancelled = true; clearInterval(iv); };
   }, [studentId, phase]);
+
+  if (isBoard) return <Board />;
 
   if (phase === "join") {
     return (
