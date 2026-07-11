@@ -3,34 +3,30 @@
 // teaching moments (elasticity, spoilage, shock, panic) are color-coded.
 // (PRD-personA.md §4.2)
 import { useEffect, useRef } from "react";
-import { C, F } from "./ui.js";
+import { C, T } from "./ui.js";
 
-// Color a teaching moment by its kind.
 const KIND_COLOR = {
-  elasticity: C.red,
-  spoilage: C.red,
-  panic: C.red,
-  shock: C.amber,
-  sellout: C.amber,
-  switch: C.sub,
-  aging: C.sub,
-  price: C.ink,
+  elasticity: C.red, spoilage: C.red, panic: C.red,
+  shock: C.frost, sellout: C.lemon, switch: C.muted, aging: C.muted, price: C.ink,
 };
 
-function involvesMe(entry, id) {
-  return entry.affected === id || String(entry.cause ?? "").startsWith(id) || entry.affected === "all";
+function involvesMe(e, id) {
+  return e.affected === id || String(e.cause ?? "").startsWith(id) || e.affected === "all";
 }
 
 function Entry({ e, mine }) {
   const color = KIND_COLOR[e.kind] ?? C.ink;
   const loud = e.kind === "elasticity" || e.kind === "shock";
   return (
-    <div style={{ display: "flex", gap: 10, padding: "6px 0" }}>
-      <span style={{ color: mine ? C.green : C.sub, fontSize: 14, marginTop: 2 }}>{mine ? "●" : "○"}</span>
-      <div style={{ flex: 1 }}>
-        <div style={{ ...F.body, fontSize: 15, fontWeight: mine ? 700 : 500 }}>{e.cause}</div>
-        <div style={{ ...F.body, fontSize: 14, color, fontWeight: loud ? 700 : 400 }}>
-          {e.kind === "elasticity" ? "⚡ " : ""}↳ {e.effect}
+    <div style={{ display: "flex", gap: 11, padding: "7px 0" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4 }}>
+        <span style={{ width: 9, height: 9, borderRadius: 999, background: mine ? C.green : "#fff", border: `2px solid ${mine ? C.green : C.faint}` }} />
+        <span style={{ flex: 1, width: 2, background: C.line, marginTop: 2 }} />
+      </div>
+      <div style={{ flex: 1, paddingBottom: 2 }}>
+        <div style={{ ...T.body, fontSize: 14.5, fontWeight: mine ? 700 : 500 }}>{e.cause}</div>
+        <div style={{ ...T.body, fontSize: 13.5, color, fontWeight: loud ? 700 : 500, marginTop: 1 }}>
+          {e.kind === "elasticity" ? "⚡ " : "↳ "}{e.effect}
         </div>
       </div>
     </div>
@@ -39,8 +35,6 @@ function Entry({ e, mine }) {
 
 export default function Cascade({ cascade, studentId, replayRound, onReplayRound }) {
   const refs = useRef({});
-
-  // When Report links to a round, scroll it into view and flash it.
   useEffect(() => {
     if (replayRound != null && refs.current[replayRound]) {
       refs.current[replayRound].scrollIntoView({ behavior: "smooth", block: "center" });
@@ -48,10 +42,9 @@ export default function Cascade({ cascade, studentId, replayRound, onReplayRound
   }, [replayRound]);
 
   if (!cascade || cascade.length === 0) {
-    return <p style={{ ...F.body, color: C.sub }}>No consequences yet — make a move and watch it ripple.</p>;
+    return <p style={{ ...T.body, color: C.muted }}>No consequences yet — make a move and watch it ripple.</p>;
   }
 
-  // Group entries by round, newest round first.
   const byRound = {};
   for (const e of cascade) (byRound[e.round] ??= []).push(e);
   const rounds = Object.keys(byRound).map(Number).sort((a, b) => b - a);
@@ -67,22 +60,18 @@ export default function Cascade({ cascade, studentId, replayRound, onReplayRound
             key={round}
             ref={(el) => (refs.current[round] = el)}
             onClick={() => onReplayRound?.(round)}
+            className="fade-in"
             style={{
               border: `1px solid ${active ? C.accentLine : C.line}`,
-              background: active ? C.accentBg : C.card,
-              borderRadius: 12,
-              padding: 14,
-              marginBottom: 10,
-              cursor: "pointer",
+              background: active ? C.accentBg : C.surface,
+              borderRadius: 14, padding: "13px 15px", marginBottom: 9, cursor: "pointer",
             }}
           >
-            <div style={{ ...F.label, marginBottom: 6, display: "flex", gap: 8 }}>
-              <span>Round {round}</span>
-              {hasFrost && <span style={{ color: C.amber, fontWeight: 800 }}>⚠ FROST</span>}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+              <span style={{ ...T.label }}>Round {round}</span>
+              {hasFrost && <span style={{ fontSize: 10.5, fontWeight: 800, color: C.frost, background: C.frostSoft, padding: "2px 7px", borderRadius: 999 }}>❄ FROST</span>}
             </div>
-            {entries.map((e, i) => (
-              <Entry key={i} e={e} mine={involvesMe(e, studentId)} />
-            ))}
+            {entries.map((e, i) => <Entry key={i} e={e} mine={involvesMe(e, studentId)} />)}
           </div>
         );
       })}

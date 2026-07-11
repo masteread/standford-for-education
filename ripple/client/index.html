@@ -5,9 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Ripple — Lemon Wars</title>
     <style>
-      html, body { margin: 0; background: #fafafa; -webkit-text-size-adjust: 100%; }
+      :root {
+        --paper: #fbfaf7;
+        --ink: #17150f;
+        --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
       * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--font);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1, "cv01" 1;
+      }
+      .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+      button { font-family: inherit; cursor: pointer; transition: transform .06s ease, background .15s ease, box-shadow .15s ease, border-color .15s ease; }
       button:active { transform: translateY(1px); }
+      button:disabled { cursor: not-allowed; }
+      textarea, input { font-family: inherit; }
+      :focus-visible { outline: 2px solid #2f6bf0; outline-offset: 2px; }
+      ::selection { background: #ffe9a8; }
+      .fade-in { animation: fadeIn .28s ease both; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      .frost-shimmer { position: relative; overflow: hidden; }
+      .frost-shimmer::after {
+        content: ""; position: absolute; inset: 0;
+        background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%);
+        transform: translateX(-100%); animation: shimmer 2.6s ease-in-out infinite;
+      }
+      @keyframes shimmer { to { transform: translateX(100%); } }
     </style>
   </head>
   <body>
