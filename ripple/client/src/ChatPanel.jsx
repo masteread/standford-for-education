@@ -14,7 +14,7 @@ const KIND_COLOR = {
 };
 const involvesMe = (e, id) => e.affected === id || String(e.cause ?? "").startsWith(id) || e.affected === "all";
 
-export default function ChatPanel({ state, studentId, onReplayRound }) {
+export default function ChatPanel({ state, studentId, onReplayRound, onPropose }) {
   const [tab, setTab] = useState("delegate");
   const offers = state.offers ?? [];
   return (
@@ -35,7 +35,7 @@ export default function ChatPanel({ state, studentId, onReplayRound }) {
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
-        {tab === "delegate" && <Delegate state={state} studentId={studentId} />}
+        {tab === "delegate" && <Delegate state={state} studentId={studentId} onPropose={onPropose} />}
         {tab === "crier" && <Crier state={state} studentId={studentId} onReplayRound={onReplayRound} />}
         {tab === "messages" && <Messages state={state} studentId={studentId} />}
       </div>
@@ -44,49 +44,34 @@ export default function ChatPanel({ state, studentId, onReplayRound }) {
 }
 
 // ── Delegate chat ─────────────────────────────────────────────────────────────
-function Delegate({ state, studentId }) {
+function Delegate({ state, studentId, onPropose }) {
   const self = state.growers.find((g) => g.id === studentId) ?? state.growers[0];
   const rival = state.growers.find((g) => g.id !== studentId);
-  const [log, setLog] = useState([{ from: "delegate", text: "Hi! Tell me how to price our lemons this round. 🍋" }]);
+  const [log, setLog] = useState([{ from: "delegate", text: "Hi! Tell me how to price our lemons — I'll show you the effect. 🍋" }]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [proposed, setProposed] = useState(null);
-  const [why, setWhy] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
   const scroller = useRef(null);
 
-  useEffect(() => { // new round → fresh decision
-    setProposed(null); setWhy(""); setConfirmed(false);
+  useEffect(() => { // new round → note it in the chat
     setLog((l) => [...l, { from: "crier", text: `— Round ${state.round} —` }]);
   }, [state.round]);
-  useEffect(() => { scroller.current?.scrollTo(0, scroller.current.scrollHeight); }, [log, proposed]);
-
-  const bigMove = proposed && Math.abs(Number(proposed.price) - self.price) > 1;
+  useEffect(() => { scroller.current?.scrollTo(0, scroller.current.scrollHeight); }, [log]);
 
   async function send() {
     if (!text.trim() || busy) return;
     const mine = text.trim();
     setLog((l) => [...l, { from: "you", text: mine }]);
-    setText(""); setBusy(true); setProposed(null);
+    setText(""); setBusy(true);
     try {
       const res = await fetch("/intent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId, text: mine }) });
       const data = await res.json();
       if (data.clarifyingQuestion) setLog((l) => [...l, { from: "delegate", text: data.clarifyingQuestion }]);
-      else if (data.action) { setProposed({ ...data.action, intent: mine }); setLog((l) => [...l, { from: "delegate", text: data.reply ?? `Price $${data.action.price}, produce ${data.action.produce}.` }]); }
-      else setLog((l) => [...l, { from: "delegate", text: "I couldn't read that — try rephrasing?" }]);
+      else if (data.action) {
+        onPropose?.({ ...data.action, intent: mine });
+        setLog((l) => [...l, { from: "delegate", text: `${data.reply ?? `Price $${data.action.price}, produce ${data.action.produce}.`} → see the 🔮 preview, then lock it in.` }]);
+      } else setLog((l) => [...l, { from: "delegate", text: "I couldn't read that — try rephrasing?" }]);
     } catch { setLog((l) => [...l, { from: "delegate", text: "Network hiccup — try again." }]); }
     setBusy(false);
-  }
-
-  async function confirm() {
-    if (!proposed || (bigMove && !why.trim())) return;
-    const intent = why.trim() ? `${proposed.intent} — why: ${why.trim()}` : proposed.intent;
-    try {
-      await fetch("/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId, action: { price: proposed.price, produce: proposed.produce }, intent }) });
-      setConfirmed(true);
-      setLog((l) => [...l, { from: "delegate", text: `Locked in ✓ price $${proposed.price}, ${proposed.produce} crates.` }]);
-      setProposed(null);
-    } catch { setLog((l) => [...l, { from: "delegate", text: "Couldn't lock in — try again." }]); }
   }
 
   const chips = [
@@ -100,16 +85,6 @@ function Delegate({ state, studentId }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div ref={scroller} style={{ flex: 1, overflowY: "auto", padding: 10, minHeight: 180 }}>
         {log.map((m, i) => <Msg key={i} m={m} />)}
-        {proposed && (
-          <div style={{ background: P.greenSoft, border: BORDER, boxShadow: SHADOW_SM, padding: 8, marginTop: 6 }}>
-            <div style={{ fontFamily: pixFont, fontSize: 10 }}>Proposed: ${proposed.price} · produce {proposed.produce}</div>
-            {bigMove && (
-              <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Big move — one line: why?" style={{ width: "100%", padding: 7, marginTop: 6, fontSize: 16 }} />
-            )}
-            <Btn tone="green" size={10} onClick={confirm} disabled={bigMove && !why.trim()} style={{ width: "100%", marginTop: 6 }}>Confirm →</Btn>
-          </div>
-        )}
-        {confirmed && <div style={{ fontFamily: pixFont, fontSize: 9, color: P.green, marginTop: 8 }}>Waiting for the round to resolve…</div>}
       </div>
       <div style={{ borderTop: BORDER, padding: 8 }}>
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 6 }}>

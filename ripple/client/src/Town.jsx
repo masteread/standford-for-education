@@ -6,6 +6,7 @@
 // exactly (the crowd IS the demand curve). Priced-out folk trudge off with 💸.
 // All CSS/emoji, no sprite sheets.
 import { P, BORDER, SHADOW, pixFont, bodyFont, Tag } from "./pixel.js";
+import { project } from "./market-preview.js";
 
 const FOLK = ["🧑‍🌾", "👵", "🧒", "👨‍🍳", "🧓", "👩‍🦰", "🧔", "👦", "👩", "🧑", "👴", "👧", "🧑‍🦱", "👨‍🦰", "👩‍🌾"];
 const HOUSES = ["🏠", "🏪", "🏛️", "🏫", "🏬", "🏘️", "⛪", "🏦"];
@@ -108,13 +109,41 @@ function Bubble({ x, y, text }) {
   );
 }
 
-export default function Town({ state, studentId }) {
+// Projected crowd for the live preview: scale the current townsfolk to the
+// projected buyer split so people visibly re-cluster as you scrub the price.
+function previewPlace(count, centerX, topBase) {
+  const n = Math.ceil(count / 2);
+  return [...Array(count).keys()].map((k) => {
+    const row = k % 2, col = Math.floor(k / 2);
+    return { key: `${centerX}-${k}`, left: centerX + (col - (n - 1) / 2) * 6.5, top: row ? topBase + 9 : topBase };
+  });
+}
+
+export default function Town({ state, studentId, pending, previewActive }) {
   const ids = state.growers.map((g) => g.id);
   const a = state.growers.find((g) => g.id === ids[0]);
   const b = state.growers.find((g) => g.id === ids[1]);
+  const self = state.growers.find((g) => g.id === studentId) ?? a;
+  const rival = state.growers.find((g) => g.id !== studentId) ?? b;
   const groups = assign(state, ids);
   const speech = bubbles(state, ids);
   const round = state.round;
+
+  // Live projection of the pending move on the whole ecosystem.
+  const myStallX = self.id === ids[0] ? 25 : 75;
+  const rivalStallX = myStallX === 25 ? 75 : 25;
+  let proj = null, previewCrowd = [];
+  if (previewActive && pending) {
+    const inv = (self.inventory ?? []).reduce((s, c) => s + c.crates, 0);
+    proj = project({ myPrice: pending.price, rivalPrice: rival.price, inventory: inv, produce: pending.produce, unitCost: self.unitCost, salesTax: state.salesTax ?? 0 });
+    const N = state.townsfolk ?? 20;
+    const totalB = proj.myBuyers + proj.rivalBuyers;
+    const nMine = totalB ? Math.round((N * proj.myBuyers) / totalB) : Math.round(N / 2);
+    previewCrowd = [
+      ...previewPlace(Math.min(nMine, 12), myStallX, 60).map((p) => ({ ...p })),
+      ...previewPlace(Math.min(totalB - nMine, 12), rivalStallX, 60).map((p) => ({ ...p })),
+    ];
+  }
 
   const pos = {};
   place(groups.A, 25, [64, 80]).forEach((p) => (pos[p.idx] = { ...p, buying: true }));
@@ -155,14 +184,32 @@ export default function Town({ state, studentId }) {
         {/* patrolling dog */}
         <span className="patrol" style={{ position: "absolute", top: "90%", fontSize: 22, zIndex: 3 }}>🐕</span>
 
-        {/* townsfolk */}
-        {[...Array(state.townsfolk ?? 20).keys()].map((i) => {
-          const p = pos[i] ?? { left: 50, top: 84, scale: 1, z: 3, sad: true };
-          return <Person key={i} p={p} emoji={FOLK[i % FOLK.length]} round={round} sad={p.sad} buying={p.buying} />;
-        })}
+        {/* townsfolk (dimmed while you explore a pending move) */}
+        <div style={{ opacity: previewActive ? 0.22 : 1, transition: "opacity .2s" }}>
+          {[...Array(state.townsfolk ?? 20).keys()].map((i) => {
+            const p = pos[i] ?? { left: 50, top: 84, scale: 1, z: 3, sad: true };
+            return <Person key={i} p={p} emoji={FOLK[i % FOLK.length]} round={round} sad={p.sad} buying={p.buying} />;
+          })}
+        </div>
+
+        {/* LIVE PREVIEW overlay — the whole ecosystem reacting to your pending move */}
+        {previewActive && proj && (
+          <>
+            <div style={{ position: "absolute", top: 6, left: "50%", transform: "translateX(-50%)", background: P.lemon, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "3px 8px", fontFamily: pixFont, fontSize: 8, zIndex: 8, whiteSpace: "nowrap" }}>
+              🔮 PREVIEW · town demand {proj.D} · if {rival.name} holds ${rival.price}
+            </div>
+            {/* projected buyer badges above each stall */}
+            <div style={{ position: "absolute", left: `${myStallX}%`, top: "20%", transform: "translateX(-50%)", background: P.green, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "2px 6px", fontFamily: pixFont, fontSize: 9, zIndex: 8 }}>~{proj.myBuyers} 🚶</div>
+            <div style={{ position: "absolute", left: `${rivalStallX}%`, top: "20%", transform: "translateX(-50%)", background: P.white, border: BORDER, boxShadow: "2px 2px 0 " + P.ink, padding: "2px 6px", fontFamily: pixFont, fontSize: 9, zIndex: 8 }}>~{proj.rivalBuyers} 🚶</div>
+            {/* faint projected crowd re-clustering live */}
+            {previewCrowd.map((p) => (
+              <div key={p.key} className="walk" style={{ position: "absolute", left: `${p.left}%`, top: `${p.top}%`, transform: "translateX(-50%)", fontSize: 20, opacity: 0.5, zIndex: 6 }}>🧍</div>
+            ))}
+          </>
+        )}
 
         {/* speech bubbles */}
-        {speech.map((s, i) => <Bubble key={i} x={bubbleAt[s.side].x} y={bubbleAt[s.side].y} text={s.text} />)}
+        {!previewActive && speech.map((s, i) => <Bubble key={i} x={bubbleAt[s.side].x} y={bubbleAt[s.side].y} text={s.text} />)}
 
         {/* idle hint */}
         {groups.idle.length > 0 && (

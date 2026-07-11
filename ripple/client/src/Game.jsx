@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { P, BORDER, SHADOW, pixFont, bodyFont, Panel, PixLabel, Stat, Bar, Tag, Banner, Wordmark, GOAL_LABEL } from "./pixel.js";
 import Town from "./Town.jsx";
 import ChatPanel from "./ChatPanel.jsx";
+import MarketPreview from "./MarketPreview.jsx";
 
 const SPOIL_AFTER = 3;
 const crateEmoji = (age) => (age >= 3 ? "🟤" : age === 2 ? "🟠" : "🍋");
@@ -63,9 +64,14 @@ function YourStand({ self }) {
 
 export default function Game({ state, studentId, onReplayRound }) {
   const self = state.growers.find((g) => g.id === studentId) ?? state.growers[0];
+  const rival = state.growers.find((g) => g.id !== studentId);
   const { left, frac } = useCountdown(state);
   const wide = useWidth() >= 900;
   const [dismissed, setDismissed] = useState(null);
+  const [pending, setPending] = useState(null); // {price, produce, intent} — the move being explored
+  const [confirmed, setConfirmed] = useState(false);
+  useEffect(() => { setPending(null); setConfirmed(false); }, [state.round]);
+  const previewActive = state.phase === "collecting" && !!pending && !confirmed;
 
   const banner = state.banner;
   const showBanner = banner && banner.round >= state.round - 1 && dismissed !== banner.id;
@@ -85,10 +91,11 @@ export default function Game({ state, studentId, onReplayRound }) {
     <div>
       {timer}
       {showBanner && <Banner emoji={banner.emoji} title={banner.title} sub={state.market.news} bg={bannerBg} onClose={() => setDismissed(banner.id)} />}
-      <Town state={state} studentId={studentId} />
+      <Town state={state} studentId={studentId} pending={pending} previewActive={previewActive} />
+      <MarketPreview self={self} rival={rival} state={state} pending={pending} setPending={setPending} confirmed={confirmed} onConfirmed={() => setConfirmed(true)} />
     </div>
   );
-  const rightCol = <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} />;
+  const rightCol = <ChatPanel state={state} studentId={studentId} onReplayRound={onReplayRound} onPropose={setPending} />;
   const leftCol = <YourStand self={self} />;
 
   return (
