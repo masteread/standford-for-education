@@ -182,6 +182,35 @@ function MiniStats({ self }) {
   );
 }
 
+const nameOf = (state, id) => state.players.find((p) => p.id === id)?.name ?? id;
+
+/** Plain-words recap: who moved last round, and which businesses felt it. */
+function RoundSummary({ state }) {
+  const lr = state.lastResolution;
+  if (!lr) return null;
+  const lines = (lr.summary ?? []).slice(0, 5);
+  return (
+    <Panel bg={P.paper}>
+      <PixLabel size={9} style={{ marginBottom: 6 }}>📜 ROUND {lr.round} — WHAT JUST HAPPENED</PixLabel>
+      {lines.length === 0 && <div style={{ fontFamily: bodyFont, fontSize: 16, opacity: 0.7 }}>A quiet round — everyone kept their prices and orders the same.</div>}
+      {lines.map((l) => {
+        const you = l.id === state.you;
+        return (
+          <div key={l.id} style={{ padding: "6px 0", borderBottom: `2px dotted ${P.ink}22`, background: you ? P.lemonSoft : "transparent" }}>
+            <div style={{ fontFamily: bodyFont, fontSize: 17, fontWeight: you ? 700 : 400 }}>{l.headline}{you ? " ← you" : ""}</div>
+            {l.effects.length > 0 && (
+              <div style={{ fontFamily: bodyFont, fontSize: 15, opacity: 0.9 }}>→ felt by: {l.effects.join(" · ")}</div>
+            )}
+            {l.pricedOutDelta > 0 && (
+              <div style={{ fontFamily: bodyFont, fontSize: 15, color: P.red }}>→ {l.pricedOutDelta} townsfolk stopped buying because of this</div>
+            )}
+          </div>
+        );
+      })}
+    </Panel>
+  );
+}
+
 /** Your butterfly, in one sentence (tap for the numbers). */
 function RippleLine({ state }) {
   const [open, setOpen] = useState(false);
@@ -199,7 +228,7 @@ function RippleLine({ state }) {
         <div style={{ marginTop: 6 }}>
           {deltas.map(([id, d]) => (
             <div key={id} style={{ display: "flex", justifyContent: "space-between", fontFamily: bodyFont, fontSize: 16 }}>
-              <span>{id}</span><b style={{ color: d >= 0 ? P.green : P.red }}>{d >= 0 ? "+" : ""}${d}</b>
+              <span>{nameOf(state, id)}</span><b style={{ color: d >= 0 ? P.green : P.red }}>{d >= 0 ? "+" : ""}${d}</b>
             </div>
           ))}
           <div style={{ fontFamily: bodyFont, fontSize: 14, opacity: 0.7, marginTop: 4 }}>Compared to a town where you had done nothing.</div>
@@ -259,6 +288,7 @@ export default function Game({ state, studentId, onReplayRound }) {
     <div>
       {showBanner && <Banner emoji={banner.emoji} title={banner.title} sub={state.market?.news} bg={bannerBg} onClose={() => setDismissed(banner.id)} />}
       <Town state={state} studentId={studentId} />
+      <RoundSummary state={state} />
     </div>
   );
 

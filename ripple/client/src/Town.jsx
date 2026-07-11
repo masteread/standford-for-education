@@ -82,8 +82,8 @@ function Building({ p, mine, step }) {
       {step > 0 && p.sold > 0 && (
         <div key={`sold-${step}`} className="coin" style={{ position: "absolute", top: -10, right: 0, fontSize: 12 }}>💰</div>
       )}
-      <div style={{ background: mine ? P.lemon : tint, border: `3px solid ${P.ink}`, boxShadow: `2px 2px 0 ${P.ink}`, fontFamily: pixFont, fontSize: 7, padding: "2px 2px", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {mine ? "★ YOU" : p.name.length > 12 ? p.id : p.name}{p.isHuman && !mine ? " 🧑" : ""}
+      <div style={{ background: mine ? P.lemon : tint, border: `3px solid ${P.ink}`, boxShadow: `2px 2px 0 ${P.ink}`, fontFamily: pixFont, fontSize: 7, padding: "2px 2px", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={p.name}>
+        {mine ? "★ YOU" : p.name}{p.isHuman && !mine ? " 🧑" : ""}
       </div>
     </div>
   );

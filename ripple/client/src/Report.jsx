@@ -107,7 +107,7 @@ export default function Report({ studentId, cascade, onReplayRound, replayRound 
   return (
     <div>
       <Panel bg={P.lemonSoft}>
-        <PixLabel size={13}>📊 {model.name ?? studentId}'s Report — {meta.emoji} {meta.label} {studentId}</PixLabel>
+        <PixLabel size={13}>📊 {model.name ?? studentId}'s Report — {meta.emoji} {meta.label}</PixLabel>
       </Panel>
 
       {/* THREE scores, side by side — deliberately separate */}

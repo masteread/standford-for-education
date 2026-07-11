@@ -78,7 +78,7 @@ function Delegate({ state, studentId, onPropose }) {
   const chips = [
     ["⬇ Price down", `cut price by 0.5`],
     ["⬆ Price up", `raise price to $${(self.price + 0.5).toFixed(2)}`],
-    [cheapestPeer ? `Undercut ${cheapestPeer.id}` : "Undercut", cheapestPeer ? `undercut ${cheapestPeer.id} to $${(cheapestPeer.price - 0.25).toFixed(2)}` : "undercut my competitors slightly"],
+    [cheapestPeer ? `Undercut ${cheapestPeer.name.split(" ")[0]}` : "Undercut", cheapestPeer ? `undercut ${cheapestPeer.name} to $${(cheapestPeer.price - 0.25).toFixed(2)}` : "undercut my competitors slightly"],
     ["📦 +5", `${qtyWord} 5 more`],
   ];
 

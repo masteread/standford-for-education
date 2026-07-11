@@ -126,6 +126,28 @@ function collectDecisions() {
   return decisions;
 }
 
+// Plain-words recap of the round: who moved, and which businesses felt it.
+// Built from the engine's counterfactuals — every "felt by" number is a real diff.
+function buildRoundSummary(res, impact) {
+  const players = res.state.players;
+  const emoji = { farmer: "🧑‍🌾", wholesaler: "🚛", grocer: "🛒", restaurant: "👨‍🍳" };
+  const lines = [];
+  for (const [id, imp] of Object.entries(impact)) {
+    if (!imp.moved) continue;
+    const p = players[id];
+    const priceEntry = res.cascade.find((c) => c.kind === "price" && c.source === id);
+    const what = priceEntry ? priceEntry.cause.replace(p.name, "").trim() : "changed how much they produce/order";
+    const effects = Object.entries(imp.deltas)
+      .filter(([q, d]) => q !== id && Math.abs(d) >= 1)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, 3)
+      .map(([q, d]) => `${players[q].name} ${d > 0 ? "+" : "−"}$${Math.abs(d)}`);
+    lines.push({ id, headline: `${emoji[p.role]} ${p.name} ${what}`, effects, pricedOutDelta: imp.pricedOutDelta, welfareDelta: imp.welfareDelta });
+  }
+  lines.sort((a, b) => Math.abs(b.welfareDelta) - Math.abs(a.welfareDelta));
+  return lines;
+}
+
 function resolveAndAdvance() {
   const decisions = collectDecisions();
   const res = resolveEcosystem(game.state, decisions, scenario);
@@ -141,6 +163,7 @@ function resolveAndAdvance() {
     folkTrips: res.folkTrips,
     cascade: res.cascade,
     metrics: res.metrics,
+    summary: buildRoundSummary(res, impact),
     resolvedAt: Date.now(),
   };
   saveState(res.metrics.round, { metrics: res.metrics, trades: res.trades }).catch(() => {});
@@ -180,7 +203,9 @@ app.post("/join", async (req, res) => {
   if (!cast) return res.status(409).json({ error: "town full (11 seats)" });
 
   const p = game.state.players[cast.studentId];
-  p.name = name;
+  const suffix = { farmer: "Farm", wholesaler: "Depot", grocer: "Market", restaurant: "Café" };
+  p.name = `${name}'s ${suffix[cast.role] ?? "Shop"}`; // the business carries the student's name
+  p.owner = name; // student name, for reports & memory
   p.isHuman = true;
   p.goal = cast.goal;
   game.joinOrder.push(cast.studentId);
@@ -345,7 +370,7 @@ function buildCohort() {
     .map((sid) => {
       const p = game.state.players[sid];
       return {
-        studentId: sid, name: p.name, role: p.role, goal: p.goal,
+        studentId: sid, name: p.owner ?? p.name, role: p.role, goal: p.goal,
         goalProgress: p.goalProgress, profit: p.profitCumulative,
         impact: impactSummary[sid],
         decisionLog: game.decisionLog.filter((d) => d.studentId === sid),

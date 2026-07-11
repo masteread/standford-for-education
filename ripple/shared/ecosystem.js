@@ -12,6 +12,15 @@
 export const ROLE_PREFIX = { farmer: "F", wholesaler: "W", grocer: "G", restaurant: "R" };
 export const ROLES = ["farmer", "wholesaler", "grocer", "restaurant"];
 
+// Real business names — students see these, never the seat codes (F1/W1/…).
+// Seat ids stay as stable keys for positions, trades, and grading.
+export const SEAT_NAMES = {
+  F1: "Sunny Grove Farm", F2: "Old Mill Farm", F3: "Hilltop Farm",
+  W1: "Big Crate Depot", W2: "Valley Depot",
+  G1: "Corner Market", G2: "Fresh Basket", G3: "Lemon & Co.",
+  R1: "Café Limón", R2: "Zesty Spoon", R3: "Mama Lima's",
+};
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const round2 = (v) => Math.round(v * 100) / 100;
 const sum = (a) => a.reduce((s, x) => s + x, 0);
@@ -62,7 +71,7 @@ export function freshPlayer(seat, scenario) {
   return {
     id: seat.id,
     role: seat.role,
-    name: `${tier.label} ${seat.id}`,
+    name: SEAT_NAMES[seat.id] ?? `${tier.label} ${seat.id}`,
     isHuman: false,
     cash: tier.startCash,
     price: tier.defaultPrice,
@@ -188,7 +197,7 @@ function clearMarket({ buyers, sellers, round, repFactor, loyaltyGap, trades, ca
     if (b.shortfall > 0 && b.qty > 0) {
       cascade.push({
         round, kind: "shortage", source: null, affected: b.id,
-        cause: `${b.id} ordered ${b.qty} crates but only ${b.qty - b.shortfall} arrived`,
+        cause: `${b.name} ordered ${b.qty} crates but only ${b.qty - b.shortfall} arrived`,
         effect: "upstream sold out — thin shelves downstream next",
       });
     }
@@ -196,10 +205,12 @@ function clearMarket({ buyers, sellers, round, repFactor, loyaltyGap, trades, ca
     const main = Object.entries(b._filledBy).sort((x, y) => y[1] - x[1])[0];
     if (main) {
       if (b.lastSupplier && b.lastSupplier !== main[0]) {
+        const oldS = sellers.find((s) => s.id === b.lastSupplier);
+        const newS = sellers.find((s) => s.id === main[0]);
         cascade.push({
           round, kind: "switch", source: main[0], affected: b.lastSupplier,
-          cause: `${b.id} switched supplier ${b.lastSupplier} → ${main[0]}`,
-          effect: `${main[0]} was cheaper — ${b.lastSupplier} lost the order`,
+          cause: `${b.name} switched supplier: ${oldS?.name ?? b.lastSupplier} → ${newS?.name ?? main[0]}`,
+          effect: `${newS?.name ?? main[0]} was cheaper — ${oldS?.name ?? b.lastSupplier} lost the order`,
         });
       }
       b.lastSupplier = main[0];
@@ -277,7 +288,7 @@ export function resolveEcosystem(state, decisions, scenario) {
     p._cash0 = p.cash; p._price0 = price0; p._badSold = 0;
     if (p.price !== price0) {
       const dir = p.price > price0 ? "raised" : "cut";
-      push("price", p.id, "all", `${p.id} ${dir} ${p.role === "restaurant" ? "meal" : "crate"} price $${price0} → $${p.price}`,
+      push("price", p.id, "all", `${p.name} ${dir} ${p.role === "restaurant" ? "meal" : "crate"} price $${price0} → $${p.price}`,
         `every ${p.role}-buyer re-evaluates where to shop`);
     }
     p.lastAction = { price: p.price, qty: p.qty };
@@ -287,7 +298,7 @@ export function resolveEcosystem(state, decisions, scenario) {
   for (const p of byRole("farmer")) {
     const affordable = Math.floor(p.cash / p.unitCost);
     const grow = Math.min(p.qty, affordable);
-    if (grow < p.qty) push("shortage", null, p.id, `${p.id} couldn't afford to grow ${p.qty} crates`, `only $${p.cash} on hand — grew ${grow}`);
+    if (grow < p.qty) push("shortage", null, p.id, `${p.name} couldn't afford to grow ${p.qty} crates`, `only $${p.cash} on hand — grew ${grow}`);
     p.cash = round2(p.cash - grow * p.unitCost);
     if (grow > 0) p.inventory.push({ age: 0, units: grow, bad: false });
     p.handledCumulative += grow;
@@ -360,7 +371,7 @@ export function resolveEcosystem(state, decisions, scenario) {
     const minStock = p.role === "restaurant" ? 1 / mealsPerCrate : 1;
     if (totalUnits(p.inventory) < minStock) {
       p.stockoutRounds++;
-      push("sellout", null, p.id, `${p.id} sold out completely`, "townsfolk found empty shelves — demand walked next door");
+      push("sellout", null, p.id, `${p.name} sold out completely`, "townsfolk found empty shelves — demand walked next door");
     }
   }
 
@@ -369,8 +380,8 @@ export function resolveEcosystem(state, decisions, scenario) {
     if ((p._badSold ?? 0) > 0) {
       p.reputationUntil = round + scenario.reputation.rounds;
       p.repHits++;
-      push("quality", p.id, "all", `${p.id} sold bad lemons 🤢`,
-        `buyers treat ${p.id}'s prices as ${Math.round((repFactor - 1) * 100)}% higher for ${scenario.reputation.rounds} rounds (Akerlof)`);
+      push("quality", p.id, "all", `${p.name} sold bad lemons 🤢`,
+        `buyers treat ${p.name}'s prices as ${Math.round((repFactor - 1) * 100)}% higher for ${scenario.reputation.rounds} rounds (Akerlof)`);
     }
   }
 
@@ -386,7 +397,7 @@ export function resolveEcosystem(state, decisions, scenario) {
     }
     if (spoiled > 0.01) {
       p.spoiledCumulative = round2(p.spoiledCumulative + spoiled);
-      push("spoilage", null, p.id, `${p.id} held ${round2(spoiled)} crates too long`, "they spoiled and were destroyed (inventory risk)");
+      push("spoilage", null, p.id, `${p.name} held ${round2(spoiled)} crates too long`, "they spoiled and were destroyed (inventory risk)");
     }
   }
 
@@ -397,7 +408,7 @@ export function resolveEcosystem(state, decisions, scenario) {
     p.profitCumulative = round2(p.profitCumulative + p.profitRound);
     totalProfit += p.profitRound;
     if (p._price0 != null && p.price > p._price0 && p.prevRevenue != null && p.profitRound < p.prevRevenue) {
-      push("elasticity", p.id, p.id, `${p.id} raised price but earned less ($${p.prevRevenue} → $${p.profitRound})`,
+      push("elasticity", p.id, p.id, `${p.name} raised price but earned less ($${p.prevRevenue} → $${p.profitRound})`,
         "buyers walked — demand here is elastic");
     }
     p.prevRevenue = p.profitRound;
