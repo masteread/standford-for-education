@@ -21,6 +21,8 @@
   a.btn { font-family:"Press Start 2P",monospace; font-size:13px; display:block; background:var(--green); color:var(--ink);
     border:4px solid var(--ink); box-shadow:5px 5px 0 var(--ink); padding:18px 12px; text-decoration:none; margin:14px 0 4px; }
   a.btn:active { transform:translate(2px,2px); box-shadow:3px 3px 0 var(--ink); }
+  a.btn.disabled { background:#eee; color:#999; pointer-events:none; box-shadow:5px 5px 0 #bbb; border-color:#bbb; }
+  code { background:var(--lemon); padding:2px 6px; border:2px solid var(--ink); }
 </style>
 </head>
 <body>
@@ -30,11 +32,12 @@
   <div style="font-size:21px; opacity:.85; margin-bottom:18px">Run a business in a little lemon town — with your whole class.</div>
 
   <div class="panel" style="background:#FFF3C4">
-    <div class="pix" style="font-size:11px; margin-bottom:14">📱 SCAN TO TAKE A SEAT</div>
-    <div style="display:inline-block; border:4px solid var(--ink); background:#fff; padding:10px; line-height:0"><?xml version="1.0" encoding="utf-8"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg width="260" height="260" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 33" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h33v33H0z"/><path stroke="#000000" d="M4 4.5h7m1 0h1m1 0h3m2 0h1m2 0h7M4 5.5h1m5 0h1m2 0h1m1 0h2m2 0h2m1 0h1m5 0h1M4 6.5h1m1 0h3m1 0h1m4 0h1m2 0h1m3 0h1m1 0h3m1 0h1M4 7.5h1m1 0h3m1 0h1m1 0h1m3 0h1m2 0h2m1 0h1m1 0h3m1 0h1M4 8.5h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h3m1 0h1m1 0h1m1 0h3m1 0h1M4 9.5h1m5 0h1m1 0h1m2 0h5m2 0h1m5 0h1M4 10.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M12 11.5h2m1 0h2m2 0h1M4 12.5h1m3 0h1m1 0h4m3 0h3m1 0h5m2 0h1M4 13.5h2m1 0h1m5 0h1m3 0h2m1 0h1m2 0h1m1 0h1m1 0h1M5 14.5h4m1 0h1m1 0h2m2 0h1m3 0h3m2 0h2M4 15.5h1m1 0h4m2 0h2m2 0h1m1 0h4m4 0h2M4 16.5h1m1 0h1m3 0h1m2 0h2m1 0h1m2 0h2m1 0h7M4 17.5h3m1 0h1m3 0h3m2 0h2m1 0h5m2 0h1M7 18.5h2m1 0h5m6 0h2m1 0h3M6 19.5h1m1 0h1m3 0h3m1 0h1m8 0h3M4 20.5h3m3 0h2m3 0h1m1 0h8m1 0h1M12 21.5h1m3 0h1m1 0h3m3 0h1M4 22.5h7m1 0h9m1 0h1m1 0h3M4 23.5h1m5 0h1m4 0h1m1 0h1m1 0h2m3 0h2m1 0h1M4 24.5h1m1 0h3m1 0h1m1 0h2m2 0h2m2 0h9M4 25.5h1m1 0h3m1 0h1m2 0h1m3 0h3m1 0h1m3 0h1m2 0h1M4 26.5h1m1 0h3m1 0h1m2 0h1m5 0h2m1 0h3m2 0h1M4 27.5h1m5 0h1m2 0h2m1 0h1m1 0h1m4 0h2m2 0h1M4 28.5h7m1 0h2m1 0h1m1 0h2m5 0h1m1 0h3"/></svg>
-</div>
-    <a class="btn" href="http://10.16.138.193:3001/">▶ OR TAP HERE TO JOIN</a>
-    <div style="font-size:17px; opacity:.8; margin-top:8px">Live demo @ BetaHack · you must be on the venue wi-fi (<b>Stanford Guest</b>)<br/>or type <b>http://10.16.138.193:3001/</b></div>
+    <div class="pix" style="font-size:11px; margin-bottom:14px">🎟️ TAKE A SEAT</div>
+    <a id="joinBtn" class="btn disabled" href="#">▶ JOIN THE GAME</a>
+    <div id="joinHint" style="font-size:17px; opacity:.8; margin-top:8px">
+      Ask your teacher for the join link. It looks like <code>http://THEIR-COMPUTER-IP:3001/</code><br/>
+      and you must be on the same Wi-Fi as their computer.
+    </div>
   </div>
 
   <div class="panel" style="text-align:left">
@@ -44,8 +47,31 @@
     <div>3️⃣ Watch the town react — your moves ripple through everyone else. 🦋</div>
   </div>
 
-  <div style="font-size:16px; opacity:.7">Team Lemonville — Shreeya Dasa &amp; Eduardo Aguirre · BetaHack @ Stanford<br/>
+  <div class="panel" style="text-align:left; background:#E3EEFF">
+    <div class="pix" style="font-size:10px; margin-bottom:10px">👩‍🏫 TEACHERS</div>
+    <div>Run <code>npm run dev</code>, then share the join URL it prints (or link players
+    to this page with <code>?join=http://your-ip:3001/</code>). Full guide in the
+    <a href="https://github.com/masteread/standford-for-education#readme" style="color:var(--ink)">README</a>.</div>
+  </div>
+
+  <div style="font-size:16px; opacity:.7">Lemonville — an open-source economics classroom · MIT licensed<br/>
+  Created by Shreeya Dasa &amp; Eduardo Aguirre ·
   <a href="https://github.com/masteread/standford-for-education" style="color:var(--ink)">GitHub repo</a></div>
 </div>
+
+<script>
+  // The join link is passed in as ?join=<url> so any teacher can point this page
+  // at their own running server. No fixed address is baked into this page.
+  (function () {
+    var join = new URLSearchParams(location.search).get("join");
+    if (!join) return;
+    try { join = new URL(join, location.href).href; } catch (e) { return; } // basic sanitize
+    var btn = document.getElementById("joinBtn");
+    btn.href = join;
+    btn.classList.remove("disabled");
+    document.getElementById("joinHint").innerHTML =
+      "or open <b>" + join.replace(/</g, "&lt;") + "</b> on your phone (same Wi-Fi as your teacher).";
+  })();
+</script>
 </body>
 </html>
