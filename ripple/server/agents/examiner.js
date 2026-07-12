@@ -10,8 +10,9 @@ import OpenAI from "openai";
 import { saveSkillModel } from "../storage.js";
 import { saveSkillMemory } from "../evermind.js";
 
-const BASE_URL = process.env.NEBIUS_BASE_URL || "https://api.studio.nebius.com/v1/";
-const MODEL_LARGE = process.env.NEBIUS_MODEL_LARGE || "meta-llama/Llama-3.3-70B-Instruct";
+// Bring-your-own-key: any OpenAI-compatible provider (LLM_* vars; NEBIUS_* aliased).
+const BASE_URL = process.env.LLM_BASE_URL || process.env.NEBIUS_BASE_URL || "https://api.studio.nebius.com/v1/";
+const MODEL_LARGE = process.env.LLM_MODEL_LARGE || process.env.NEBIUS_MODEL_LARGE || "meta-llama/Llama-3.3-70B-Instruct";
 
 const DIMENSIONS = ["equilibrium_reasoning", "strategic_anticipation", "information_updating", "risk_management"];
 const TASKS = [
@@ -26,9 +27,10 @@ const FROST_ROUND = 4;
 const TAX_ROUND = 6;
 const QTY_MAX = { farmer: 30, wholesaler: 40, grocer: 20, restaurant: 8 };
 
-const liveMode = () => Boolean(process.env.NEBIUS_API_KEY) && process.env.RIPPLE_MOCK !== "1";
+const apiKey = () => process.env.LLM_API_KEY || process.env.NEBIUS_API_KEY;
+const liveMode = () => Boolean(apiKey()) && process.env.RIPPLE_MOCK !== "1";
 let client = null;
-const getClient = () => (client ??= new OpenAI({ baseURL: BASE_URL, apiKey: process.env.NEBIUS_API_KEY, timeout: 60_000, maxRetries: 1 }));
+const getClient = () => (client ??= new OpenAI({ baseURL: BASE_URL, apiKey: apiKey(), timeout: 60_000, maxRetries: 1 }));
 const clamp10 = (v) => Math.min(10, Math.max(0, Number(v) || 0));
 
 function buildPrompt({ role, goal, decisionLog, relevantCascade }) {

@@ -8,14 +8,17 @@
 
 import OpenAI from "openai";
 
-const BASE_URL = process.env.NEBIUS_BASE_URL || "https://api.studio.nebius.com/v1/";
-const MODEL_SMALL = process.env.NEBIUS_MODEL_SMALL || "meta-llama/Llama-3.1-8B-Instruct";
+// Bring-your-own-key: any OpenAI-compatible provider. Generic LLM_* vars are the
+// documented names; NEBIUS_* are kept as aliases for back-compat.
+const BASE_URL = process.env.LLM_BASE_URL || process.env.NEBIUS_BASE_URL || "https://api.studio.nebius.com/v1/";
+const MODEL_SMALL = process.env.LLM_MODEL_SMALL || process.env.NEBIUS_MODEL_SMALL || "meta-llama/Llama-3.1-8B-Instruct";
 const DELEGATE_TIMEOUT_MS = 8000;
 
-const liveMode = () => Boolean(process.env.NEBIUS_API_KEY) && process.env.RIPPLE_MOCK !== "1";
+const apiKey = () => process.env.LLM_API_KEY || process.env.NEBIUS_API_KEY;
+const liveMode = () => Boolean(apiKey()) && process.env.RIPPLE_MOCK !== "1";
 let client = null;
 const getClient = () =>
-  (client ??= new OpenAI({ baseURL: BASE_URL, apiKey: process.env.NEBIUS_API_KEY, timeout: DELEGATE_TIMEOUT_MS, maxRetries: 0 }));
+  (client ??= new OpenAI({ baseURL: BASE_URL, apiKey: apiKey(), timeout: DELEGATE_TIMEOUT_MS, maxRetries: 0 }));
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
